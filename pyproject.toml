@@ -52,6 +52,7 @@ dev = [
     "ruff>=0.2",
     "mypy>=1.8",
     "pre-commit>=3.6",
+    "towncrier>=23.0",
 ]
 postgres = [
     "sqlalchemy>=2.0",
@@ -100,6 +101,34 @@ markers = [
     "integration: marks tests as requiring external API access (deselect with '-m \"not integration\"')",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+
+[tool.towncrier]
+name = "atlas"
+package = "atlas"
+package_dir = "src"
+directory = "changes"
+filename = "CHANGELOG.md"
+title_format = "{name} {version} ({project_date})"
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "Features"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "bugfix"
+name = "Bug fixes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "doc"
+name = "Documentation"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "misc"
+name = "Misc"
+showcontent = true
 
 [tool.coverage.run]
 source = ["atlas"]
