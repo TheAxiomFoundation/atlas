@@ -112,9 +112,8 @@ class SupabaseIngestor:
                             "apikey": self.key,
                             "Authorization": f"Bearer {self.key}",
                             "Content-Type": "application/json",
-                            "Content-Profile": "arch",  # Write to arch schema
-                            # Upsert: on conflict with citation_path, update
-                            "Prefer": "resolution=merge-duplicates,return=minimal",
+                            "Content-Profile": "arch",
+                            "Prefer": "resolution=ignore-duplicates,return=minimal",
                         },
                         json=rules,
                     )
