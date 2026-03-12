@@ -152,11 +152,11 @@ class TestParseLocalFile:
         ) == "44-911"
 
     def test_parse_tx_filename_pattern(self, tmp_path):
-        """TX: Docs_AG_htm_AG.1.htm_1-001.html → AG.1-1-001"""
+        """TX: Docs_AG_htm_AG.1.htm_1-001.html → AG/1.001"""
         orch = StateOrchestrator(data_dir=tmp_path)
         assert orch._extract_section_number(
             "Docs_AG_htm_AG.1.htm_1-001.html", "tx"
-        ) == "AG.1-1-001"
+        ) == "AG/1.001"
 
     def test_parse_me_filename_pattern(self, tmp_path):
         """ME: statutes_1_title1ch0sec0.html.html → 1-0"""
@@ -225,6 +225,78 @@ class TestParseLocalFile:
         # Should not crash, just return 0
         result = orch.ingest_state("de", mode="local")
         assert result == 0
+
+
+class TestMultiArgConverters:
+    """Test handling of converters with non-standard _parse_section_html signatures."""
+
+    def test_tx_4arg_parse_splits_code_and_section(self, tmp_path):
+        """TX converter takes (html, code, section_number, url) — 4 args.
+        _parse_local_file should split the extracted section number."""
+        orch = StateOrchestrator(data_dir=tmp_path)
+        # TX filename: Docs_AG_htm_AG.1.htm_1-001.html → AG/1.001
+        # Should split into code="AG", section_number="1.001"
+        result = orch._split_section_for_converter("AG/1.001", "tx")
+        assert result == ("AG", "1.001")
+
+    def test_me_4arg_parse_splits_title_and_section(self, tmp_path):
+        """ME converter takes (html, title, section_number, url) — 4 args.
+        _parse_local_file should split the extracted section number."""
+        orch = StateOrchestrator(data_dir=tmp_path)
+        # ME filename: statutes_1_title1ch0sec0.html.html → 1-0
+        # Should split into title=1, section_number="0"
+        result = orch._split_section_for_converter("1-0", "me")
+        assert result == (1, "0")
+
+    def test_tx_parse_local_file_calls_4arg(self, tmp_path):
+        """Integration: _parse_local_file passes correct args to TX converter."""
+        state_dir = tmp_path / "statutes" / "us-tx"
+        state_dir.mkdir(parents=True)
+        html_file = state_dir / "Docs_AG_htm_AG.1.htm_1-001.html"
+        html_file.write_text("<html>test</html>")
+        orch = StateOrchestrator(data_dir=tmp_path)
+
+        captured_args = []
+
+        class FakeConverter:
+            def _parse_section_html(self, html, code, section_number, url):
+                captured_args.extend([html, code, section_number, url])
+                return MagicMock()
+
+            def _to_section(self, parsed):
+                return _make_section()
+
+        with patch.object(orch, "_get_converter", return_value=FakeConverter()):
+            result = orch._parse_local_file(html_file, "tx")
+
+        assert result is not None
+        assert captured_args[1] == "AG"  # code
+        assert captured_args[2] == "1.001"  # section_number
+
+    def test_standard_3arg_still_works(self, tmp_path):
+        """Standard converters with (html, section_number, url) still work."""
+        state_dir = tmp_path / "statutes" / "us-oh"
+        state_dir.mkdir(parents=True)
+        html_file = state_dir / "ohio-revised-code_section-5747.01.html"
+        html_file.write_text("<html>test</html>")
+        orch = StateOrchestrator(data_dir=tmp_path)
+
+        captured_args = []
+
+        class FakeConverter:
+            def _parse_section_html(self, html, section_number, url):
+                captured_args.extend([html, section_number, url])
+                return MagicMock()
+
+            def _to_section(self, parsed):
+                return _make_section()
+
+        with patch.object(orch, "_get_converter", return_value=FakeConverter()):
+            result = orch._parse_local_file(html_file, "oh")
+
+        assert result is not None
+        assert captured_args[0] == "<html>test</html>"  # html
+        assert captured_args[1] == "5747.01"  # section_number
 
 
 class TestGetAvailableStates:

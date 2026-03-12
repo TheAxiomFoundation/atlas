@@ -1,6 +1,7 @@
 """Orchestrate state statute ingestion into Supabase."""
 
 import importlib
+import inspect
 import re
 from pathlib import Path
 
@@ -156,16 +157,22 @@ class StateOrchestrator:
             if match:
                 return match.group(1)
 
-        # TX: Docs_AG_htm_AG.1.htm_1-001.html → AG.1-001
-        #     Pattern: Docs_{code}_htm_{code}.{ch}.htm_{sec}.html
+        # TX: Docs_AG_htm_AG.1.htm_1-001.html → AG/1.001
+        #     Pattern: Docs_{code}_htm_{code}.{ch}.htm_{ch}-{sec}.html
         if filename.startswith("Docs_") and "_htm_" in filename:
-            match = re.search(r"_htm_([A-Z]+\.\d+)\.htm_(.+?)\.html$", filename)
+            match = re.search(
+                r"_htm_([A-Z]+)\.(\d+)\.htm_\d+-(.+?)\.html$", filename
+            )
             if match:
-                return f"{match.group(1)}-{match.group(2)}"
+                code = match.group(1)
+                chapter = match.group(2)
+                section = match.group(3)
+                return f"{code}/{chapter}.{section}"
 
         # ME: statutes_1_title1ch0sec0.html.html → 1-0
+        #     statutes_13-A_title13-Ach0sec0.html.html → 13-A-0
         if "title" in filename and "sec" in filename:
-            match = re.search(r"title(\d+)ch\d+sec(\d+)", filename)
+            match = re.search(r"title([\d]+(?:-[A-Z])?)ch\d+sec(\d+)", filename)
             if match:
                 return f"{match.group(1)}-{match.group(2)}"
 
@@ -211,6 +218,36 @@ class StateOrchestrator:
             stem = re.sub(rf"^{prefix}[-_]?", "", stem, flags=re.IGNORECASE)
         return stem
 
+    def _split_section_for_converter(
+        self, section_num: str, state: str
+    ) -> tuple:
+        """Split an extracted section number for converters with extra args.
+
+        TX: "AG.1-1-001" → ("AG", "1-1-001")  — code, section_number
+        ME: "1-0" → (1, "0")  — title (int), section_number
+        """
+        if state == "tx":
+            # TX format: "CODE/chapter.section" e.g. "AG/1.001"
+            # Split at slash: code="AG", section_number="1.001"
+            if "/" in section_num:
+                code, section = section_num.split("/", 1)
+                return (code, section)
+            return (section_num, "")
+        elif state == "me":
+            # ME format: "title-section" e.g. "1-0" or "13-A-0"
+            parts = section_num.split("-", 1)
+            if len(parts) == 2:
+                try:
+                    title = int(parts[0])
+                except ValueError:
+                    title = parts[0]
+                return (title, parts[1])
+            try:
+                return (int(section_num), "0")
+            except ValueError:
+                return (section_num, "0")
+        return (section_num,)
+
     def _parse_local_file(self, html_path: Path, state: str):
         """Parse a single local HTML file into a Section."""
         converter = self._get_converter(state)
@@ -222,10 +259,25 @@ class StateOrchestrator:
 
         section_num = self._extract_section_number(html_path.name, state)
         html = html_path.read_text(errors="replace")
+        url = f"file://{html_path}"
         try:
-            parsed = converter._parse_section_html(
-                html, section_num, f"file://{html_path}"
-            )
+            # Check how many params the converter expects (excluding self)
+            sig = inspect.signature(converter._parse_section_html)
+            param_count = len(sig.parameters)
+
+            if param_count == 4:
+                # Non-standard: (html, extra_arg, section_number, url)
+                # e.g. TX: (html, code, section_number, url)
+                # e.g. ME: (html, title, section_number, url)
+                parts = self._split_section_for_converter(section_num, state)
+                parsed = converter._parse_section_html(
+                    html, parts[0], parts[1], url
+                )
+            else:
+                # Standard: (html, section_number, url)
+                parsed = converter._parse_section_html(
+                    html, section_num, url
+                )
             return converter._to_section(parsed)
         except Exception as e:
             print(f"  Warning: Could not parse {html_path.name}: {e}")
