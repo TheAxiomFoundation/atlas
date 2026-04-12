@@ -806,3 +806,38 @@ class SupabaseIngestor:
 
         print(f"Done! Upserted {total_inserted} rules for {state_code.upper()}")
         return total_inserted
+
+    # -------------------------------------------------------------------------
+    # State Ingestion (via StateOrchestrator)
+    # -------------------------------------------------------------------------
+
+    def ingest_state(self, state_code: str) -> int:
+        """Ingest all statutes for a state from local HTML files.
+
+        Delegates to StateOrchestrator for file discovery, parsing, and upload.
+
+        Args:
+            state_code: Two-letter state code (e.g., "oh", "ca")
+
+        Returns:
+            Number of rules upserted
+        """
+        from atlas.ingest.state_orchestrator import StateOrchestrator
+        from atlas.ingest.rule_uploader import RuleUploader
+
+        uploader = RuleUploader(url=self.url, key=self.key)
+        orch = StateOrchestrator(uploader=uploader)
+        return orch.ingest_state(state_code)
+
+    def ingest_all_states(self) -> dict[str, int]:
+        """Ingest all states that have local HTML data.
+
+        Returns:
+            Dict mapping state code to number of rules upserted
+        """
+        from atlas.ingest.state_orchestrator import StateOrchestrator
+        from atlas.ingest.rule_uploader import RuleUploader
+
+        uploader = RuleUploader(url=self.url, key=self.key)
+        orch = StateOrchestrator(uploader=uploader)
+        return orch.ingest_all_states()

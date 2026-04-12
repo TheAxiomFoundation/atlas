@@ -21,7 +21,7 @@ DB_PATH = "/data/atlas.db"
 
 # Container image with dependencies
 image = (
-    modal.Image.debian_slim(python_version="3.12")
+    modal.Image.debian_slim(python_version="3.14")
     .pip_install(
         "fastapi>=0.109",
         "uvicorn>=0.27",

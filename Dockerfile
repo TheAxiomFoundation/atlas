@@ -2,7 +2,7 @@
 # Build: docker build -t cosilico-atlas .
 # Run:   docker run -p 8000:8000 -v $(pwd)/atlas.db:/app/atlas.db cosilico-atlas
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 

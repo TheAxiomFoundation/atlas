@@ -14,59 +14,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from atlas.storage.r2 import get_r2_arch, get_r2_rules_xml
-
-
-# State converter imports - we'll dynamically import based on state
-STATE_CONVERTERS = {
-    'ak': 'arch.converters.us_states.ak',
-    'al': 'arch.converters.us_states.al',
-    'ar': 'arch.converters.us_states.ar',
-    'az': 'arch.converters.us_states.az',
-    'ca': 'arch.converters.us_states.ca',
-    'co': 'arch.converters.us_states.co',
-    'ct': 'arch.converters.us_states.ct',
-    'fl': 'arch.converters.us_states.fl',
-    'hi': 'arch.converters.us_states.hi',
-    'id': 'arch.converters.us_states.id_',
-    'il': 'arch.converters.us_states.il',
-    'in': 'arch.converters.us_states.in_',
-    'ks': 'arch.converters.us_states.ks',
-    'ky': 'arch.converters.us_states.ky',
-    'la': 'arch.converters.us_states.la',
-    'ma': 'arch.converters.us_states.ma',
-    'md': 'arch.converters.us_states.md',
-    'me': 'arch.converters.us_states.me',
-    'mi': 'arch.converters.us_states.mi',
-    'mn': 'arch.converters.us_states.mn',
-    'mo': 'arch.converters.us_states.mo',
-    'ms': 'arch.converters.us_states.ms',
-    'mt': 'arch.converters.us_states.mt',
-    'nc': 'arch.converters.us_states.nc',
-    'nd': 'arch.converters.us_states.nd',
-    'ne': 'arch.converters.us_states.ne',
-    'nh': 'arch.converters.us_states.nh',
-    'nj': 'arch.converters.us_states.nj',
-    'nm': 'arch.converters.us_states.nm',
-    'nv': 'arch.converters.us_states.nv',
-    'ny': 'arch.converters.us_states.ny',
-    'oh': 'arch.converters.us_states.oh',
-    'ok': 'arch.converters.us_states.ok',
-    'or': 'arch.converters.us_states.or_',
-    'pa': 'arch.converters.us_states.pa',
-    'ri': 'arch.converters.us_states.ri',
-    'sc': 'arch.converters.us_states.sc',
-    'sd': 'arch.converters.us_states.sd',
-    'tn': 'arch.converters.us_states.tn',
-    'tx': 'arch.converters.us_states.tx',
-    'ut': 'arch.converters.us_states.ut',
-    'va': 'arch.converters.us_states.va',
-    'vt': 'arch.converters.us_states.vt',
-    'wa': 'arch.converters.us_states.wa',
-    'wi': 'arch.converters.us_states.wi',
-    'wv': 'arch.converters.us_states.wv',
-    'wy': 'arch.converters.us_states.wy',
-}
+from atlas.ingest.state_orchestrator import STATE_CONVERTER_MODULES as STATE_CONVERTERS
+from atlas.storage.r2 import get_r2_atlas, get_r2_rules_xml
 
 
 def section_to_akn_xml(section, state: str) -> str:
@@ -178,7 +127,7 @@ class StatePipeline:
     def __init__(self, state: str, dry_run: bool = False):
         self.state = state.lower()
         self.dry_run = dry_run
-        self.r2_arch = get_r2_arch()
+        self.r2_arch = get_r2_atlas()
         self.r2_rules = get_r2_rules_xml()
         self.converter = None
         self.stats = {
@@ -440,12 +389,41 @@ class StatePipeline:
         return self.stats
 
 
+def run_supabase_ingestion(state: str | None = None, all_states: bool = False):
+    """Ingest state statutes from local HTML into Supabase."""
+    from atlas.ingest.state_orchestrator import StateOrchestrator
+
+    orch = StateOrchestrator()
+
+    if all_states:
+        print("Ingesting all states into Supabase...")
+        results = orch.ingest_all_states()
+        print(f"\n{'='*60}")
+        print("SUPABASE INGESTION RESULTS:")
+        total = 0
+        for state_code, count in sorted(results.items()):
+            print(f"  {state_code.upper()}: {count} rules")
+            total += count
+        print(f"  TOTAL: {total} rules")
+    elif state:
+        print(f"Ingesting {state.upper()} into Supabase...")
+        count = orch.ingest_state(state.lower())
+        print(f"Done! {count} rules upserted for {state.upper()}")
+    else:
+        print("Specify --state or --all-states with --supabase")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run statute pipeline")
     parser.add_argument("--state", help="State code (e.g., ak, ny)")
     parser.add_argument("--all-states", action="store_true", help="Process all states")
     parser.add_argument("--dry-run", action="store_true", help="Don't actually upload")
+    parser.add_argument("--supabase", action="store_true", help="Ingest into Supabase instead of R2")
     args = parser.parse_args()
+
+    if args.supabase:
+        run_supabase_ingestion(state=args.state, all_states=args.all_states)
+        return
 
     if args.all_states:
         states = list(STATE_CONVERTERS.keys())

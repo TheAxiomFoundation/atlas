@@ -150,7 +150,6 @@ Citations follow USC format and convert to filesystem paths:
 Tests use pytest with async support. Key test files:
 - `test_models.py` - Citation parsing, model validation
 - `test_storage.py` - SQLite backend operations
-- `test_uslm_parser.py` - XML parsing
 - `test_document_writer.py` - Output generation
 
 Run a single test:
