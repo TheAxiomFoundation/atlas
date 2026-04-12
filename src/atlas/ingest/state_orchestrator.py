@@ -5,6 +5,8 @@ import inspect
 import re
 from pathlib import Path
 
+from bs4 import BeautifulSoup
+
 from atlas.ingest.rule_converter import section_to_rules
 from atlas.ingest.rule_uploader import RuleUploader
 
@@ -113,6 +115,13 @@ class StateOrchestrator:
         Each state has unique URL-derived filenames. This method handles
         all known patterns.
         """
+        # MD: mgawebsite_Laws_StatuteText_article-gtg_section-10-105_enactments-false.html
+        #     → gtg/10-105
+        if "StatuteText" in filename and "article-" in filename and "section-" in filename:
+            match = re.search(r"article-([A-Za-z]+)_section-([^_]+)", filename)
+            if match:
+                return f"{match.group(1).lower()}/{match.group(2)}"
+
         # OH: ohio-revised-code_section-5747.01.html → 5747.01
         # AL: code-of-alabama_section-1-1-1.1.html → 1-1-1.1
         if "section-" in filename:
@@ -176,6 +185,41 @@ class StateOrchestrator:
             if match:
                 return f"{match.group(1)}-{match.group(2)}"
 
+        # MA: Laws_GeneralLaws_PartI_TitleIX_Chapter62_Section2.html → 62-2
+        if "GeneralLaws" in filename and "Chapter" in filename and "Section" in filename:
+            match = re.search(r"Chapter([^_]+)_Section([^_.]+)", filename)
+            if match:
+                return f"{match.group(1)}-{match.group(2)}"
+
+        # IL: Documents_legislation_ilcs_documents_003500050K201.htm.html → 35-5-201
+        #     legislation_ilcs_fulltext.asp_DocName-003500050K201.html → 35-5-201
+        if "DocName-" in filename or "documents_" in filename:
+            match = re.search(
+                r"(?:DocName-|documents_)(\d{4})0(\d{3})0K(.+?)(?:\.htm)?(?:\.html)?$",
+                filename,
+                re.IGNORECASE,
+            )
+            if match:
+                return f"{int(match.group(1))}-{int(match.group(2))}-{match.group(3)}"
+
+        # VT: statutes_section_32_151_05811.html → 32-151-5811
+        #     statutes_section_32_151_05828b.html → 32-151-5828b
+        if "statutes_section_" in filename:
+            match = re.search(r"statutes_section_([^_]+)_([^_]+)_([^_.]+)", filename)
+            if match:
+                section = re.sub(r"^0+(?=\d)", "", match.group(3)) or "0"
+                return f"{match.group(1)}-{match.group(2)}-{section}"
+
+        # UT: xcode_Title59_Chapter10_C59-10-S104_1800010118000101.html → 59-10-104
+        if "xcode_Title" in filename and "-S" in filename:
+            match = re.search(
+                r"(?:C)?(\d+[A-Z]?)-(\d+)-S([^_.]+)",
+                filename,
+                re.IGNORECASE,
+            )
+            if match:
+                return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+
         # RI: Statutes_TITLE1_INDEX.HTM.html → TITLE1
         if "Statutes_TITLE" in filename:
             match = re.search(r"Statutes_(TITLE\d+)", filename)
@@ -218,53 +262,115 @@ class StateOrchestrator:
             stem = re.sub(rf"^{prefix}[-_]?", "", stem, flags=re.IGNORECASE)
         return stem
 
-    def _split_section_for_converter(
-        self, section_num: str, state: str
-    ) -> tuple:
-        """Split an extracted section number for converters with extra args.
+    def _split_on_last_hyphen(self, section_num: str, state: str) -> tuple[str, str]:
+        """Split title/chapter-prefixed section IDs where the prefix may contain hyphens."""
+        if "-" not in section_num:
+            raise ValueError(f"Could not split {state.upper()} section ID: {section_num}")
+        return section_num.rsplit("-", 1)
 
-        TX: "AG.1-1-001" → ("AG", "1-1-001")  — code, section_number
-        ME: "1-0" → (1, "0")  — title (int), section_number
-        """
+    def _split_prefixed_section(self, section_num: str, state: str) -> tuple[str, str]:
+        """Split IDs with a prefix and a section, e.g. code/section or article/section."""
+        match = re.match(r"([^/-]+)[/-](.+)", section_num)
+        if not match:
+            raise ValueError(f"Could not split {state.upper()} section ID: {section_num}")
+        return match.group(1), match.group(2)
+
+    def _split_triplet_section(
+        self, section_num: str, state: str
+    ) -> tuple[str, str, str]:
+        """Split IDs with three components, e.g. title-chapter-section."""
+        match = re.match(r"([^/-]+)[/-]([^/-]+)[/-](.+)", section_num)
+        if not match:
+            raise ValueError(f"Could not split {state.upper()} section ID: {section_num}")
+        return match.group(1), match.group(2), match.group(3)
+
+    def _build_parse_context(self, section_num: str, state: str) -> dict[str, object]:
+        """Build named context values for converter-specific parser signatures."""
+        context: dict[str, object] = {
+            "section": section_num,
+            "section_number": section_num,
+        }
+
         if state == "tx":
-            # TX format: "CODE/chapter.section" e.g. "AG/1.001"
-            # Split at slash: code="AG", section_number="1.001"
-            if "/" in section_num:
-                code, section = section_num.split("/", 1)
-                return (code, section)
-            return (section_num, "")
+            code, section = self._split_prefixed_section(section_num, state)
+            context.update(code=code, section=section, section_number=section)
         elif state == "me":
-            # ME format: "title-section" e.g. "1-0" or "13-A-0"
-            parts = section_num.split("-", 1)
-            if len(parts) == 2:
-                try:
-                    title = int(parts[0])
-                except ValueError:
-                    title = parts[0]
-                return (title, parts[1])
-            try:
-                return (int(section_num), "0")
-            except ValueError:
-                return (section_num, "0")
-        return (section_num,)
+            title, section = self._split_on_last_hyphen(section_num, state)
+            context.update(
+                title=int(title) if title.isdigit() else title,
+                section=section,
+                section_number=section,
+            )
+        elif state == "ma":
+            chapter, section = self._split_on_last_hyphen(section_num, state)
+            context.update(chapter=chapter, section=section, section_number=section)
+        elif state == "md":
+            article_code, section = self._split_prefixed_section(section_num, state)
+            context.update(
+                article_code=article_code.lower(),
+                section=section,
+                section_number=section,
+            )
+        elif state == "il":
+            chapter, act, section = self._split_triplet_section(section_num, state)
+            context.update(
+                chapter=int(chapter),
+                act=int(act),
+                section=section,
+                section_number=section,
+            )
+        elif state == "vt":
+            title, chapter, section = self._split_triplet_section(section_num, state)
+            context.update(
+                title=int(title),
+                chapter=int(chapter),
+                section=section,
+                section_number=section,
+            )
+
+        return context
+
+    def _build_parse_args(
+        self,
+        parameters: tuple[inspect.Parameter, ...],
+        section_num: str,
+        state: str,
+        html: str,
+        url: str,
+    ) -> list[object]:
+        """Map an extracted section ID onto the converter's parser signature."""
+        context = self._build_parse_context(section_num, state)
+        context.update({"html": html, "html_content": html, "url": url})
+
+        args: list[object] = []
+        for parameter in parameters:
+            if parameter.name == "soup":
+                args.append(BeautifulSoup(html, "html.parser"))
+            elif parameter.name in context:
+                args.append(context[parameter.name])
+            elif parameter.default is not inspect.Parameter.empty:
+                args.append(parameter.default)
+            else:
+                raise ValueError(
+                    f"Unsupported parser signature for {state.upper()}: "
+                    f"{parameter.name}"
+                )
+        return args
 
     def _parse_local_file(
-        self, html_path: Path, state: str, converter, param_count: int
+        self,
+        html_path: Path,
+        state: str,
+        converter,
+        parameters: tuple[inspect.Parameter, ...],
     ):
         """Parse a single local HTML file into a Section."""
         section_num = self._extract_section_number(html_path.name, state)
         html = html_path.read_text(errors="replace")
         url = f"file://{html_path}"
         try:
-            if param_count == 4:
-                parts = self._split_section_for_converter(section_num, state)
-                parsed = converter._parse_section_html(
-                    html, parts[0], parts[1], url
-                )
-            else:
-                parsed = converter._parse_section_html(
-                    html, section_num, url
-                )
+            parse_args = self._build_parse_args(parameters, section_num, state, html, url)
+            parsed = converter._parse_section_html(*parse_args)
             return converter._to_section(parsed)
         except Exception as e:
             print(f"  Warning: Could not parse {html_path.name}: {e}")
@@ -290,14 +396,12 @@ class StateOrchestrator:
             )
             return 0
 
-        param_count = len(
-            inspect.signature(converter._parse_section_html).parameters
-        )
+        parameters = tuple(inspect.signature(converter._parse_section_html).parameters.values())
 
         all_rules = []
         for html_path in html_files:
             section = self._parse_local_file(
-                html_path, state_code, converter, param_count
+                html_path, state_code, converter, parameters
             )
             if section:
                 rules = list(
