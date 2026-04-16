@@ -8,13 +8,19 @@ Usage
 -----
 ::
 
-    # One part
+    # One part (SNAP -- 7 CFR Chapter II, Subchapter C)
     SUPABASE_ACCESS_TOKEN=... uv run python scripts/ingest_cfr_parts.py \\
-        --title 7 --part 273
+        --title 7 --chapter II --subchapter C --part 273
 
     # Multiple parts
     SUPABASE_ACCESS_TOKEN=... uv run python scripts/ingest_cfr_parts.py \\
-        --title 7 --parts 271,272,273,274,275,276,277,278,279,281,282,283
+        --title 7 --chapter II --subchapter C \\
+        --parts 271,272,273,274,275,276,277,278,279,281,282,283
+
+When ``--chapter`` / ``--subchapter`` are omitted the script falls back to
+a generic eCFR URL (``/current/title-{title}/part-{part}``); eCFR handles
+the indirect lookup. Provide the flags to produce the deep-linked URLs
+the viewer prefers.
 
 Environment
 -----------
@@ -98,7 +104,54 @@ def fetch_part_xml(title: int, part: int, as_of: str) -> ET.Element:
 # --- Row builder -----------------------------------------------------------
 
 
-def build_rows(title: int, part_num: int, part_root: ET.Element) -> list[dict]:
+def _ecfr_part_url(title: int, part_num: int, chapter: str | None, subchapter: str | None) -> str:
+    """Build an eCFR URL for a CFR part.
+
+    If ``chapter`` and ``subchapter`` are supplied, the deep-linked
+    ``/title-{t}/chapter-{c}/subchapter-{s}/part-{p}`` form is returned.
+    Otherwise we fall back to ``/title-{t}/part-{p}`` — eCFR resolves the
+    correct chapter/subchapter on its side, so the link still works; it
+    just doesn't preserve the hierarchy in the URL.
+    """
+    base = f"https://www.ecfr.gov/current/title-{title}"
+    if chapter and subchapter:
+        return f"{base}/chapter-{chapter}/subchapter-{subchapter}/part-{part_num}"
+    return f"{base}/part-{part_num}"
+
+
+def _ecfr_subpart_url(
+    title: int, part_num: int, subpart_letter: str, chapter: str | None, subchapter: str | None
+) -> str:
+    base = f"https://www.ecfr.gov/current/title-{title}"
+    if chapter and subchapter:
+        return (
+            f"{base}/chapter-{chapter}/subchapter-{subchapter}"
+            f"/part-{part_num}/subpart-{subpart_letter}"
+        )
+    return f"{base}/part-{part_num}/subpart-{subpart_letter}"
+
+
+def _ecfr_section_url(
+    title: int,
+    part_num: int,
+    sec_num: str,
+    chapter: str | None,
+    subchapter: str | None,
+) -> str:
+    base = f"https://www.ecfr.gov/current/title-{title}"
+    anchor = f"#p-{part_num}.{sec_num}"
+    if chapter and subchapter:
+        return f"{base}/chapter-{chapter}/subchapter-{subchapter}/part-{part_num}{anchor}"
+    return f"{base}/part-{part_num}{anchor}"
+
+
+def build_rows(
+    title: int,
+    part_num: int,
+    part_root: ET.Element,
+    chapter: str | None = None,
+    subchapter: str | None = None,
+) -> list[dict]:
     rows: list[dict] = []
 
     part_elem = None
@@ -120,9 +173,7 @@ def build_rows(title: int, part_num: int, part_root: ET.Element) -> list[dict]:
         clean_text("".join(part_head.itertext())) if part_head is not None else f"Part {part_num}"
     )
     part_heading = re.sub(rf"^PART\s+{part_num}\s*[—–-]\s*", "", part_heading, flags=re.I)
-    part_source = (
-        f"https://www.ecfr.gov/current/title-{title}/chapter-II/subchapter-C/part-{part_num}"
-    )
+    part_source = _ecfr_part_url(title, part_num, chapter, subchapter)
     rows.append(
         {
             "id": part_id,
@@ -154,10 +205,7 @@ def build_rows(title: int, part_num: int, part_root: ET.Element) -> list[dict]:
         body = collect_full_text(div8)
         sec_path = f"{part_path}/{sec_num}"
         digits = re.match(r"(\d+)", sec_num).group(1)
-        sec_source = (
-            f"https://www.ecfr.gov/current/title-{title}/chapter-II"
-            f"/subchapter-C/part-{part_num}#p-{part_num}.{sec_num}"
-        )
+        sec_source = _ecfr_section_url(title, part_num, sec_num, chapter, subchapter)
         rows.append(
             {
                 "id": deterministic_id(sec_path),
@@ -165,6 +213,8 @@ def build_rows(title: int, part_num: int, part_root: ET.Element) -> list[dict]:
                 "doc_type": "regulation",
                 "parent_id": parent_id,
                 "level": level,
+                # Ordinal: digit-section x 10 (so section 273.1 -> 10, section 273.10 -> 100),
+                # + 1 for lettered suffixes (section 273.1a -> 11) so they sort after the plain form.
                 "ordinal": int(digits) * 10 + (0 if sec_num.isdigit() else 1),
                 "heading": sec_heading,
                 "body": body,
@@ -186,10 +236,7 @@ def build_rows(title: int, part_num: int, part_root: ET.Element) -> list[dict]:
         subpart_heading = re.sub(r"^Subpart\s+[A-Z]+\s*[—–-]\s*", "", subpart_heading, flags=re.I)
         subpart_path = f"{part_path}/subpart-{subpart_letter.lower()}"
         subpart_id = deterministic_id(subpart_path)
-        subpart_source = (
-            f"https://www.ecfr.gov/current/title-{title}/chapter-II"
-            f"/subchapter-C/part-{part_num}/subpart-{subpart_letter}"
-        )
+        subpart_source = _ecfr_subpart_url(title, part_num, subpart_letter, chapter, subchapter)
         rows.append(
             {
                 "id": subpart_id,
@@ -304,8 +351,32 @@ def main(argv: Iterable[str] | None = None) -> int:
         help="Fetch and parse, but do not upsert (requires no SUPABASE_ACCESS_TOKEN)",
     )
 
+    parser.add_argument(
+        "--chapter",
+        type=str,
+        default=None,
+        help=(
+            "CFR chapter (e.g. 'II'). Optional -- used only to produce "
+            "deep-linked eCFR URLs. When omitted, generic /title-T/part-P "
+            "URLs are emitted."
+        ),
+    )
+    parser.add_argument(
+        "--subchapter",
+        type=str,
+        default=None,
+        help=(
+            "CFR subchapter (e.g. 'C'). Optional -- used only for "
+            "deep-linked eCFR URLs. Must be paired with --chapter."
+        ),
+    )
+
     args = parser.parse_args(list(argv) if argv is not None else None)
-    parts = [args.part] if args.part else args.parts
+    # Use ``is not None`` so --part 0 doesn't fall through to args.parts.
+    parts = [args.part] if args.part is not None else args.parts
+
+    if bool(args.chapter) != bool(args.subchapter):
+        parser.error("--chapter and --subchapter must be supplied together")
 
     service_key = None if args.dry_run else get_service_key()
 
@@ -317,7 +388,13 @@ def main(argv: Iterable[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"  FETCH FAILED: {exc}", file=sys.stderr)
             continue
-        rows = build_rows(args.title, part_num, xml_root)
+        rows = build_rows(
+            args.title,
+            part_num,
+            xml_root,
+            chapter=args.chapter,
+            subchapter=args.subchapter,
+        )
         print(f"  built {len(rows):4d} rows", file=sys.stderr)
         if args.dry_run:
             total += len(rows)
