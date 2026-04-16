@@ -120,7 +120,7 @@ def main():
     # Database connection - use pooler URL
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
-        db_url = "postgresql://postgres.nsupqhfchdtqclomlrgs:YlpJXpBsy0NzLqxV@aws-0-us-west-2.pooler.supabase.com:5432/postgres"
+        raise SystemExit("Set DATABASE_URL before running extract_usc_xrefs.py")
 
     # USC XML directory
     usc_dir = Path(__file__).parent.parent / "data" / "uscode"
