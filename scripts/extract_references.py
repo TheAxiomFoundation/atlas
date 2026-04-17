@@ -62,13 +62,39 @@ def _auth_headers(service_key: str) -> dict[str, str]:
     }
 
 
+def _prefix_upper_bound(prefix: str) -> str:
+    """Exclusive upper bound for a prefix range, in the default btree ordering.
+
+    The range ``[prefix, prefix_upper_bound)`` exactly covers every string
+    that begins with ``prefix`` under PostgreSQL's default text collation.
+    Incrementing the last character avoids LIKE's dependency on
+    ``text_pattern_ops`` indexes — a plain btree range scan suffices.
+
+    Examples:
+        'us-ny/' -> 'us-ny0'      (slash 0x2F + 1 = '0' 0x30)
+        'us-dc/' -> 'us-dc0'
+        'us-nz'  -> 'us-n{'       (z + 1 = '{')
+    """
+    if not prefix:
+        raise ValueError("prefix must be non-empty")
+    return prefix[:-1] + chr(ord(prefix[-1]) + 1)
+
+
 def fetch_rules_page(
     service_key: str,
     offset: int,
     doc_type: str | None,
     since_citation_path: str | None,
+    prefix: str | None = None,
 ) -> list[dict]:
-    """Fetch a page of rules with non-empty body, ordered by citation_path."""
+    """Fetch a page of rules with non-empty body, ordered by citation_path.
+
+    When ``prefix`` is set, rows are restricted to the half-open range
+    ``[prefix, _prefix_upper_bound(prefix))`` so we can target one
+    jurisdiction (``us-ny/``) without rescanning the whole corpus.
+    ``since_citation_path`` still acts as an intra-prefix cursor for
+    resumption.
+    """
     params = [
         "select=id,citation_path,body",
         "body=not.is.null",
@@ -78,7 +104,19 @@ def fetch_rules_page(
     ]
     if doc_type:
         params.append(f"doc_type=eq.{doc_type}")
-    if since_citation_path:
+    if prefix:
+        # First page: inclusive lower bound at the prefix. Resumption pages:
+        # strict greater-than the last path, same as the no-prefix path.
+        if since_citation_path:
+            params.append(
+                f"citation_path=gt.{urllib.parse.quote(since_citation_path)}"
+            )
+        else:
+            params.append(f"citation_path=gte.{urllib.parse.quote(prefix)}")
+        params.append(
+            f"citation_path=lt.{urllib.parse.quote(_prefix_upper_bound(prefix))}"
+        )
+    elif since_citation_path:
         params.append(f"citation_path=gt.{urllib.parse.quote(since_citation_path)}")
     url = f"{REST_URL}/rules?{'&'.join(params)}"
     req = urllib.request.Request(
@@ -266,6 +304,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--doc-type", choices=["statute", "regulation"], default=None)
     parser.add_argument("--since-citation-path", default=None)
     parser.add_argument(
+        "--prefix",
+        default=None,
+        help=(
+            "Limit extraction to citation_paths starting with this prefix "
+            "(e.g. 'us-ny/'). Useful for per-jurisdiction backfills."
+        ),
+    )
+    parser.add_argument(
         "--limit", type=int, default=None, help="Stop after N source rules (for testing)"
     )
     parser.add_argument("--dry-run", action="store_true")
@@ -290,6 +336,7 @@ def main(argv: list[str] | None = None) -> int:
                 offset=0,
                 doc_type=args.doc_type,
                 since_citation_path=last_path,
+                prefix=args.prefix,
             )
             if service_key
             else _dry_run_page(args)
@@ -338,6 +385,11 @@ def _dry_run_page(args: argparse.Namespace) -> list[dict]:
     ]
     if args.doc_type:
         params.append(f"doc_type=eq.{args.doc_type}")
+    if args.prefix:
+        params.append(f"citation_path=gte.{urllib.parse.quote(args.prefix)}")
+        params.append(
+            f"citation_path=lt.{urllib.parse.quote(_prefix_upper_bound(args.prefix))}"
+        )
     url = f"{REST_URL}/rules?{'&'.join(params)}"
     req = urllib.request.Request(
         url,
