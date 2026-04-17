@@ -153,7 +153,7 @@ def main():
             cur.execute(
                 """
                 SELECT id, citation_path
-                FROM arch.rules
+                FROM akn.rules
                 WHERE citation_path LIKE 'us/statute/26/%'
             """
             )

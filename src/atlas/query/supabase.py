@@ -1,6 +1,6 @@
 """Query statute data from Supabase.
 
-This module provides a simple interface to query the arch.rules table in Supabase,
+This module provides a simple interface to query the akn.rules table in Supabase,
 which contains parsed statute text from US, UK, and Canada.
 
 Usage:
@@ -103,7 +103,7 @@ class SupabaseQuery:
         self.headers = {
             "apikey": self.anon_key,
             "Authorization": f"Bearer {self.anon_key}",
-            "Accept-Profile": "arch",  # Query arch schema
+            "Accept-Profile": "akn",  # Query arch schema
         }
 
     def _request(
@@ -327,7 +327,7 @@ class SupabaseQuery:
             headers = {
                 **self.headers,
                 "Prefer": "count=exact",
-                "Accept-Profile": "arch",  # Query arch schema
+                "Accept-Profile": "akn",  # Query arch schema
             }
             with httpx.Client() as client:
                 response = client.head(url, params=params, headers=headers)

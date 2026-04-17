@@ -1,4 +1,4 @@
-"""Ingest CFR parts from eCFR into Supabase ``arch.rules``.
+"""Ingest CFR parts from eCFR into Supabase ``akn.rules``.
 
 Downloads the eCFR Versioner XML for a given (title, part), parses the
 DIV5/DIV6/DIV8 hierarchy, and upserts Part / Subpart / Section rows with
@@ -284,7 +284,7 @@ def upsert_rows(rows: list[dict], service_key: str) -> None:
             "Authorization": f"Bearer {service_key}",
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates,return=minimal",
-            "Content-Profile": "arch",
+            "Content-Profile": "akn",
             "User-Agent": USER_AGENT,
         },
         method="POST",
