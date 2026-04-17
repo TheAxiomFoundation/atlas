@@ -149,7 +149,7 @@ class TestArchGetReferences:
         mock_storage.get_referenced_by.return_value = ["26 USC 1"]
 
         arch = Arch(storage=mock_storage)
-        refs = akn.get_references("26 USC 32")
+        refs = arch.get_references("26 USC 32")
 
         assert refs["references_to"] == ["26 USC 24"]
         assert refs["referenced_by"] == ["26 USC 1"]
@@ -161,7 +161,7 @@ class TestArchGetReferences:
 
         arch = Arch(storage=mock_storage)
         cite = Citation(title=26, section="32")
-        refs = akn.get_references(cite)
+        refs = arch.get_references(cite)
 
         assert refs["references_to"] == []
         assert refs["referenced_by"] == []

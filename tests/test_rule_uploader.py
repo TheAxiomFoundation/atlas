@@ -35,7 +35,7 @@ class TestUpsertBatchHeaders:
             headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
             assert headers["apikey"] == "test-service-key"
             assert headers["Authorization"] == "Bearer test-service-key"
-            assert headers["Content-Profile"] == "arch"
+            assert headers["Content-Profile"] == "akn"
             assert headers["Prefer"] == "resolution=ignore-duplicates,return=minimal"
 
 class TestUpsertBatchLineCount:
