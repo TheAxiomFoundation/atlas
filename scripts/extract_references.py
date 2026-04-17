@@ -96,7 +96,7 @@ def fetch_rules_page(
     resumption.
     """
     params = [
-        "select=id,citation_path,body",
+        "select=id,citation_path,body,jurisdiction",
         "body=not.is.null",
         "order=citation_path.asc",
         f"limit={PAGE_SIZE}",
@@ -254,7 +254,7 @@ def process_batch(
     all_targets: set[str] = set()
     for rule in rules:
         body = rule.get("body") or ""
-        refs = extract_all(body)
+        refs = extract_all(body, jurisdiction=rule.get("jurisdiction"))
         if refs:
             all_refs.append((rule, refs))
             all_targets.update(r.target_citation_path for r in refs)
@@ -378,7 +378,7 @@ def _dry_run_page(args: argparse.Namespace) -> list[dict]:
 
     anon_key = os.environ.get("SUPABASE_ANON_KEY") or _fallback_anon_key()
     params = [
-        "select=id,citation_path,body",
+        "select=id,citation_path,body,jurisdiction",
         "body=not.is.null",
         "order=citation_path.asc",
         f"limit={PAGE_SIZE}",

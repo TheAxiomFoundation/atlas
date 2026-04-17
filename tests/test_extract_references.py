@@ -131,7 +131,8 @@ class TestFetchRulesPageParams:
             prefix="us-dc/",
         )
         params = dict(_decode_params(url))
-        assert params["select"] == "id,citation_path,body"
+        # `jurisdiction` is selected so extract_all can route DC patterns.
+        assert params["select"] == "id,citation_path,body,jurisdiction"
         assert params["body"] == "not.is.null"
         assert params["order"] == "citation_path.asc"
         assert params["limit"] == str(extract_references.PAGE_SIZE)

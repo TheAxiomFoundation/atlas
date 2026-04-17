@@ -199,6 +199,62 @@ class USCExtractor(Extractor):
         )
 
 
+# --- DC extractor ---------------------------------------------------------
+
+
+class DCExtractor(Extractor):
+    """Matches District of Columbia Code intra-citations.
+
+    DC statutes refer to other DC sections as ``§ 47-1801.04(a)(1)``,
+    where the dash separates title from section. Three numbering
+    variants occur in the corpus, matching how DC paths are stored:
+
+        §\u00a047-1801.04          → us-dc/statute/47/47-1801.04
+        § 29A-1001              → us-dc/statute/29A/29A-1001
+        § 28:9-316(i)(1)        → us-dc/statute/28:9/28:9-316/i/1
+
+    The ``§`` marker is required — without it we'd false-match things
+    like public-law numbers ("Pub. L. 110-46"), so the cheap guard is
+    to insist on the section sign.
+
+    DC bodies variously use regular space, U+2002 (en space), or U+2009
+    (thin space) between ``§`` and the number. All are matched.
+
+    This extractor only applies to DC source rules; the runtime filters
+    it out elsewhere via :func:`extract_all` 's ``jurisdiction`` arg.
+    """
+
+    pattern_kind: ClassVar[str] = "dc"
+
+    pattern: ClassVar[re.Pattern[str]] = re.compile(
+        r"§[\s\u2002\u2009\u00A0]*"
+        r"(?P<title>\d+[A-Za-z]?|\d+:\d+)"
+        r"-(?P<section>\d+(?:\.\d+)?[A-Za-z]?)"
+        rf"(?P<sub>{_SUBSECTION_CHAIN})"
+    )
+
+    def to_ref(self, match: re.Match[str]) -> ExtractedRef | None:
+        title = match.group("title")
+        section = match.group("section")
+        sub = match.group("sub") or ""
+
+        path_parts = [
+            "us-dc",
+            "statute",
+            title,
+            f"{title}-{section}",
+        ]
+        path_parts.extend(_subsection_segments(sub))
+        return ExtractedRef(
+            raw_text=match.group(0),
+            pattern_kind=self.pattern_kind,
+            target_citation_path="/".join(path_parts),
+            start_offset=match.start(),
+            end_offset=match.end(),
+            confidence=1.0,
+        )
+
+
 # --- CFR extractor --------------------------------------------------------
 
 
@@ -266,14 +322,19 @@ class CFRExtractor(Extractor):
 # --- Public API -----------------------------------------------------------
 
 
-def all_extractors() -> list[Extractor]:
-    """All registered extractors, in a stable order.
+def all_extractors(jurisdiction: str | None = None) -> list[Extractor]:
+    """Extractors active for ``jurisdiction``.
 
-    Callers typically want :func:`extract_all` rather than this, but
-    exposed so tests and downstream users can reason about what's
-    running.
+    USC and CFR are universal — every corpus can cite federal statutes
+    and regulations. Jurisdiction-specific extractors (``DCExtractor``)
+    only activate when the source rule's jurisdiction matches, so we
+    don't generate spurious ``us-dc/...`` targets from a federal body
+    that happens to contain a look-alike pattern.
     """
-    return [USCExtractor(), CFRExtractor()]
+    extractors: list[Extractor] = [USCExtractor(), CFRExtractor()]
+    if jurisdiction == "us-dc":
+        extractors.append(DCExtractor())
+    return extractors
 
 
 def _dedupe(refs: Iterable[ExtractedRef]) -> list[ExtractedRef]:
@@ -291,14 +352,19 @@ def _dedupe(refs: Iterable[ExtractedRef]) -> list[ExtractedRef]:
     return sorted(seen.values(), key=lambda x: x.start_offset)
 
 
-def extract_all(body: str) -> list[ExtractedRef]:
-    """Run every registered extractor over ``body`` and merge results.
+def extract_all(body: str, jurisdiction: str | None = None) -> list[ExtractedRef]:
+    """Run every applicable extractor over ``body`` and merge results.
+
+    ``jurisdiction`` routes jurisdiction-scoped extractors (e.g. DC
+    intra-code cites). Defaults to None, which runs only the universal
+    (federal) extractors — backward-compatible with callers that don't
+    know about jurisdiction.
 
     Overlapping matches at the same span are deduplicated in favor of
     the highest-confidence extractor. The returned list is sorted by
     ``start_offset`` so callers can stream-process body text.
     """
     refs: list[ExtractedRef] = []
-    for e in all_extractors():
+    for e in all_extractors(jurisdiction):
         refs.extend(e.extract(body))
     return _dedupe(refs)

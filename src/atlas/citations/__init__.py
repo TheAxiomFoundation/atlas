@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from .extractor import (
     CFRExtractor,
+    DCExtractor,
     ExtractedRef,
     Extractor,
     USCExtractor,
@@ -27,6 +28,7 @@ from .extractor import (
 
 __all__ = [
     "CFRExtractor",
+    "DCExtractor",
     "ExtractedRef",
     "Extractor",
     "USCExtractor",

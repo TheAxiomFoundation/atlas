@@ -6,8 +6,10 @@ import pytest
 
 from atlas.citations import (
     CFRExtractor,
+    DCExtractor,
     ExtractedRef,
     USCExtractor,
+    all_extractors,
     extract_all,
 )
 
@@ -130,6 +132,105 @@ class TestCFRExtractor:
     def test_no_match_on_usc(self) -> None:
         # Ensure we don't accidentally match USC text.
         assert CFRExtractor().extract("26 USC 32") == []
+
+
+# --- DC -------------------------------------------------------------------
+
+
+class TestDCExtractor:
+    def test_basic_dc_cite(self) -> None:
+        body = "See § 47-1801.04 for definitions."
+        refs = DCExtractor().extract(body)
+        assert len(refs) == 1
+        assert refs[0].target_citation_path == "us-dc/statute/47/47-1801.04"
+        assert refs[0].pattern_kind == "dc"
+        assert refs[0].confidence == 1.0
+        assert body[refs[0].start_offset : refs[0].end_offset] == refs[0].raw_text
+
+    def test_subsection_chain(self) -> None:
+        refs = DCExtractor().extract("see § 47-1801.04(a)(1)(A)")
+        assert refs[0].target_citation_path == "us-dc/statute/47/47-1801.04/a/1/A"
+
+    def test_alpha_suffix_title(self) -> None:
+        refs = DCExtractor().extract("pursuant to § 29A-1001")
+        assert refs[0].target_citation_path == "us-dc/statute/29A/29A-1001"
+
+    def test_alpha_suffix_section(self) -> None:
+        refs = DCExtractor().extract("under § 2-1204.11b(a)")
+        assert refs[0].target_citation_path == "us-dc/statute/2/2-1204.11b/a"
+
+    def test_colon_form_title(self) -> None:
+        # DC UCC titles use a colon, e.g. 28:9 — treated as a title
+        # string, not split.
+        refs = DCExtractor().extract("see § 28:9-316(i)(1)")
+        assert refs[0].target_citation_path == "us-dc/statute/28:9/28:9-316/i/1"
+
+    def test_en_space_between_section_sign_and_number(self) -> None:
+        # DC bodies use U+2002 (en space) between § and the number.
+        refs = DCExtractor().extract("see §\u200247-181")
+        assert refs[0].target_citation_path == "us-dc/statute/47/47-181"
+
+    def test_thin_space_between_section_sign_and_number(self) -> None:
+        # DC bodies also use U+2009 (thin space).
+        refs = DCExtractor().extract("see §\u200947-1801.04")
+        assert refs[0].target_citation_path == "us-dc/statute/47/47-1801.04"
+
+    def test_nbsp_between_section_sign_and_number(self) -> None:
+        # And sometimes U+00A0 (non-breaking space).
+        refs = DCExtractor().extract("see §\u00a047-181")
+        assert refs[0].target_citation_path == "us-dc/statute/47/47-181"
+
+    def test_no_match_without_section_sign(self) -> None:
+        # Bare "47-1801.04" without § is ambiguous (could be Pub. L.,
+        # phone number, etc.) — require the § marker.
+        assert DCExtractor().extract("reference 47-1801.04 applies") == []
+
+    def test_multiple_in_one_body(self) -> None:
+        refs = DCExtractor().extract(
+            "see § 47-1801.04 and also § 47-1805.02a(a) and § 29A-1001."
+        )
+        paths = [r.target_citation_path for r in refs]
+        assert paths == [
+            "us-dc/statute/47/47-1801.04",
+            "us-dc/statute/47/47-1805.02a/a",
+            "us-dc/statute/29A/29A-1001",
+        ]
+
+
+# --- Jurisdiction routing -------------------------------------------------
+
+
+class TestAllExtractorsJurisdictionRouting:
+    def test_no_jurisdiction_runs_only_federal(self) -> None:
+        kinds = {type(e).__name__ for e in all_extractors()}
+        assert kinds == {"USCExtractor", "CFRExtractor"}
+
+    def test_us_dc_adds_dc_extractor(self) -> None:
+        kinds = {type(e).__name__ for e in all_extractors("us-dc")}
+        assert kinds == {"USCExtractor", "CFRExtractor", "DCExtractor"}
+
+    def test_us_ny_does_not_add_dc_extractor(self) -> None:
+        kinds = {type(e).__name__ for e in all_extractors("us-ny")}
+        assert "DCExtractor" not in kinds
+
+    def test_extract_all_without_jurisdiction_skips_dc_pattern(self) -> None:
+        # The DC pattern would greedily match this if it were active.
+        # With no jurisdiction hint, the federal extractors don't match
+        # the dashed form either, so we expect no refs.
+        refs = extract_all("see § 47-1801.04(a)")
+        assert refs == []
+
+    def test_extract_all_with_us_dc_returns_dc_refs(self) -> None:
+        refs = extract_all("see § 47-1801.04(a)", jurisdiction="us-dc")
+        assert len(refs) == 1
+        assert refs[0].target_citation_path == "us-dc/statute/47/47-1801.04/a"
+
+    def test_extract_all_us_dc_still_catches_federal_cites(self) -> None:
+        # A DC body citing 42 U.S.C. must still produce the USC ref.
+        body = "as defined in 42 U.S.C. § 9902 and also § 47-1801.04"
+        paths = {r.target_citation_path for r in extract_all(body, jurisdiction="us-dc")}
+        assert "us/statute/42/9902" in paths
+        assert "us-dc/statute/47/47-1801.04" in paths
 
 
 # --- Combined extract_all -------------------------------------------------
