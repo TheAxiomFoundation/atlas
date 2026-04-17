@@ -254,7 +254,11 @@ def process_batch(
     all_targets: set[str] = set()
     for rule in rules:
         body = rule.get("body") or ""
-        refs = extract_all(body, jurisdiction=rule.get("jurisdiction"))
+        refs = extract_all(
+            body,
+            jurisdiction=rule.get("jurisdiction"),
+            source_citation_path=rule.get("citation_path"),
+        )
         if refs:
             all_refs.append((rule, refs))
             all_targets.update(r.target_citation_path for r in refs)

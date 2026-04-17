@@ -86,10 +86,18 @@ def extract_text(elem: ET.Element) -> str:
     structural markers leaking into the body column. Paragraph breaks
     become blank lines; that's how search + the viewer's leaf render
     expect the body to be shaped.
+
+    The upstream ``rules-us-ny`` repo emits ``<content>`` text with
+    LITERAL ``\\n`` sequences (two chars: backslash + n) rather than
+    real newlines. Downstream this breaks citation extraction
+    (``\\s+`` won't match literal backslash-n) and renders as visible
+    ``\\n`` in the viewer. Decode at ingest so the body column always
+    carries real line breaks.
     """
     out: list[str] = []
     for p in elem.iter("{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}p"):
-        t = " ".join("".join(p.itertext()).split())
+        raw = "".join(p.itertext()).replace("\\n", "\n")
+        t = " ".join(raw.split())
         if t:
             out.append(t)
     return "\n\n".join(out)

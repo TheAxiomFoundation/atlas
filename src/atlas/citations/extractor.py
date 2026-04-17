@@ -199,6 +199,176 @@ class USCExtractor(Extractor):
         )
 
 
+# --- NY extractor ---------------------------------------------------------
+
+
+# Map from lowercased, punctuation-light law names to the directory
+# codes used as the second path segment in ``us-ny/statute/{code}/...``.
+# Populated from the 40 law codes present in the corpus — see the
+# ingest driver's source repo (``rules-us-ny``) for the canonical set.
+# Entries kept conservative: we'd rather miss a cross-law ref than
+# mis-resolve one. Alternative spellings (with/without Oxford comma,
+# apostrophe) are duplicated so regex text matches regardless of
+# punctuation.
+_NY_LAW_CODES: dict[str, str] = {
+    "alcoholic beverage control": "abc",
+    "agriculture and markets": "agm",
+    "banking": "bnk",
+    "business corporation": "bsc",
+    "criminal procedure": "cpl",
+    "civil rights": "cvr",
+    "civil service": "cvs",
+    "domestic relations": "dom",
+    "education": "edn",
+    "elder": "eld",
+    "election": "eln",
+    "environmental conservation": "env",
+    "estates, powers and trusts": "ept",
+    "estates powers and trusts": "ept",
+    "executive": "exc",
+    "general business": "gbs",
+    "general municipal": "gmu",
+    "general obligations": "gob",
+    "highway": "hay",
+    "labor": "lab",
+    "limited liability company": "llc",
+    "mental hygiene": "mhy",
+    "military": "mil",
+    "public health": "pbh",
+    "penal": "pen",
+    "social services": "sos",
+    "tax": "tax",
+    "town": "twn",
+    "vehicle and traffic": "vat",
+    "village": "vil",
+    "workers' compensation": "wkc",
+    "workers compensation": "wkc",
+}
+
+
+class NYExtractor(Extractor):
+    """Matches New York statute references.
+
+    Two forms, both resolving to ``us-ny/statute/{code}/{section}``:
+
+    1. **Cross-law**: ``section N of the {LAW_NAME} law``. The law
+       name is mapped to a code via ``_NY_LAW_CODES``. Example::
+
+           section 19-0309 of the environmental conservation law
+           → us-ny/statute/env/19-0309
+
+    2. **Intra-code**: bare ``section N`` inside a body whose source
+       rule is at ``us-ny/statute/{code}/...``. The enclosing code
+       is the default scope. Example (source rule ``us-ny/statute/tax/606``)::
+
+           section 32              → us-ny/statute/tax/32
+
+       Intra-code matches are emitted at confidence 0.7 (down from 1.0)
+       because bare ``section N`` is inherently ambiguous — the caller
+       may choose to threshold on confidence downstream.
+
+    False-positive guards:
+
+    * Intra-code form skips matches followed by ``of the ... Code``
+      (federal IRC) or ``of the ... Law`` (cross-law — let the cross-law
+      pattern claim those).
+    * Cross-law form requires the law name to be in the map; unknown
+      names produce no ref.
+    """
+
+    pattern_kind: ClassVar[str] = "ny"
+
+    # Cross-law form: "section N[sub] of the {LAW_NAME} law". Built
+    # dynamically below from the law-name map so adding a law is a
+    # one-line edit to the dict.
+    _CROSS_LAW: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bsection\s+"
+        r"(?P<section>\d+[A-Za-z]?(?:-[A-Za-z0-9]+)?(?:\.[A-Za-z0-9]+)?)"
+        rf"(?P<sub>{_SUBSECTION_CHAIN})"
+        r"\s+of\s+the\s+"
+        r"(?P<law>"
+        + "|".join(
+            re.escape(name) for name in sorted(_NY_LAW_CODES, key=len, reverse=True)
+        )
+        + r")"
+        r"\s+law\b",
+        re.IGNORECASE,
+    )
+
+    # Bare intra-code form. Followed-by guards are applied in code,
+    # not in the regex, to keep the pattern readable.
+    _INTRA: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bsection\s+"
+        r"(?P<section>\d+[A-Za-z]?(?:-[A-Za-z0-9]+)?(?:\.[A-Za-z0-9]+)?)"
+        rf"(?P<sub>{_SUBSECTION_CHAIN})",
+        re.IGNORECASE,
+    )
+
+    # Tail text patterns that indicate the match is NOT an intra-code
+    # NY reference — another extractor (or nothing) will claim it.
+    _TAIL_NOT_INTRA: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\s*(?:of\s+the\s+[A-Za-z, ']+?\s+(?:law|code|act)\b)",
+        re.IGNORECASE,
+    )
+
+    source_citation_path: str | None = None
+
+    def __init__(self, source_citation_path: str | None = None) -> None:
+        self.source_citation_path = source_citation_path
+
+    @staticmethod
+    def _enclosing_code(source_citation_path: str | None) -> str | None:
+        """Return the NY law code embedded in a source rule path, or None.
+
+        ``us-ny/statute/tax/606/a`` → ``tax``
+        ``us-ny/statute/env/19-0309`` → ``env``
+        """
+        if not source_citation_path:
+            return None
+        parts = source_citation_path.split("/")
+        if len(parts) >= 3 and parts[0] == "us-ny" and parts[1] == "statute":
+            return parts[2]
+        return None
+
+    def extract(self, body: str) -> list[ExtractedRef]:
+        refs: list[ExtractedRef] = []
+        for m in self._CROSS_LAW.finditer(body):
+            law = m.group("law").lower().strip()
+            code = _NY_LAW_CODES.get(law)
+            if code is None:  # pragma: no cover — regex alternation forbids
+                continue
+            refs.append(self._build_ref(m, code, confidence=1.0))
+
+        enclosing_code = self._enclosing_code(self.source_citation_path)
+        if enclosing_code is not None and enclosing_code in set(_NY_LAW_CODES.values()):
+            # Intra-code bare "section N" — only when we know the scope
+            # and the enclosing code is a known NY law.
+            for m in self._INTRA.finditer(body):
+                # Skip if this span was already consumed by the cross-law
+                # match above — the tail would start with "of the X law".
+                tail = body[m.end() :]
+                if self._TAIL_NOT_INTRA.match(tail):
+                    continue
+                refs.append(self._build_ref(m, enclosing_code, confidence=0.7))
+        return refs
+
+    def _build_ref(
+        self, match: re.Match[str], code: str, confidence: float
+    ) -> ExtractedRef:
+        section = match.group("section")
+        sub = match.group("sub") or ""
+        path_parts = ["us-ny", "statute", code, section]
+        path_parts.extend(_subsection_segments(sub))
+        return ExtractedRef(
+            raw_text=match.group(0),
+            pattern_kind=self.pattern_kind,
+            target_citation_path="/".join(path_parts),
+            start_offset=match.start(),
+            end_offset=match.end(),
+            confidence=confidence,
+        )
+
+
 # --- DC extractor ---------------------------------------------------------
 
 
@@ -337,18 +507,27 @@ class CFRExtractor(Extractor):
 # --- Public API -----------------------------------------------------------
 
 
-def all_extractors(jurisdiction: str | None = None) -> list[Extractor]:
+def all_extractors(
+    jurisdiction: str | None = None,
+    source_citation_path: str | None = None,
+) -> list[Extractor]:
     """Extractors active for ``jurisdiction``.
 
     USC and CFR are universal — every corpus can cite federal statutes
-    and regulations. Jurisdiction-specific extractors (``DCExtractor``)
-    only activate when the source rule's jurisdiction matches, so we
-    don't generate spurious ``us-dc/...`` targets from a federal body
-    that happens to contain a look-alike pattern.
+    and regulations. Jurisdiction-specific extractors activate when
+    the source rule's jurisdiction matches, so we don't generate
+    spurious state targets from a federal body that happens to
+    contain a look-alike pattern.
+
+    ``source_citation_path`` is passed to extractors (currently NY)
+    that use the enclosing rule's path to resolve ambiguous references
+    like bare ``section N``.
     """
     extractors: list[Extractor] = [USCExtractor(), CFRExtractor()]
     if jurisdiction == "us-dc":
         extractors.append(DCExtractor())
+    if jurisdiction == "us-ny":
+        extractors.append(NYExtractor(source_citation_path=source_citation_path))
     return extractors
 
 
@@ -367,7 +546,11 @@ def _dedupe(refs: Iterable[ExtractedRef]) -> list[ExtractedRef]:
     return sorted(seen.values(), key=lambda x: x.start_offset)
 
 
-def extract_all(body: str, jurisdiction: str | None = None) -> list[ExtractedRef]:
+def extract_all(
+    body: str,
+    jurisdiction: str | None = None,
+    source_citation_path: str | None = None,
+) -> list[ExtractedRef]:
     """Run every applicable extractor over ``body`` and merge results.
 
     ``jurisdiction`` routes jurisdiction-scoped extractors (e.g. DC
@@ -375,11 +558,15 @@ def extract_all(body: str, jurisdiction: str | None = None) -> list[ExtractedRef
     (federal) extractors — backward-compatible with callers that don't
     know about jurisdiction.
 
+    ``source_citation_path`` is used by extractors that disambiguate
+    bare references against the enclosing rule (e.g. NY intra-code
+    "section 32" resolving against the source's law code).
+
     Overlapping matches at the same span are deduplicated in favor of
     the highest-confidence extractor. The returned list is sorted by
     ``start_offset`` so callers can stream-process body text.
     """
     refs: list[ExtractedRef] = []
-    for e in all_extractors(jurisdiction):
+    for e in all_extractors(jurisdiction, source_citation_path):
         refs.extend(e.extract(body))
     return _dedupe(refs)

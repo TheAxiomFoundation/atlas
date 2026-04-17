@@ -8,6 +8,7 @@ from atlas.citations import (
     CFRExtractor,
     DCExtractor,
     ExtractedRef,
+    NYExtractor,
     USCExtractor,
     all_extractors,
     extract_all,
@@ -224,6 +225,108 @@ class TestDCExtractor:
         assert len(refs) == 1
 
 
+# --- NY -------------------------------------------------------------------
+
+
+class TestNYExtractorCrossLaw:
+    """Cross-law references like 'section N of the X Law'."""
+
+    def test_tax_law(self) -> None:
+        refs = NYExtractor().extract("see section 606 of the tax law")
+        assert len(refs) == 1
+        assert refs[0].target_citation_path == "us-ny/statute/tax/606"
+        assert refs[0].pattern_kind == "ny"
+        assert refs[0].confidence == 1.0
+
+    def test_environmental_conservation_law_with_dash_section(self) -> None:
+        refs = NYExtractor().extract(
+            "pursuant to section 19-0309 of the environmental conservation law"
+        )
+        assert refs[0].target_citation_path == "us-ny/statute/env/19-0309"
+
+    def test_penal_law(self) -> None:
+        refs = NYExtractor().extract("violates section 130.25 of the penal law")
+        assert refs[0].target_citation_path == "us-ny/statute/pen/130.25"
+
+    def test_public_health_law_with_subsection_chain(self) -> None:
+        refs = NYExtractor().extract(
+            "as defined in section 2805-b(1)(a) of the public health law"
+        )
+        assert refs[0].target_citation_path == "us-ny/statute/pbh/2805-b/1/a"
+
+    def test_case_insensitive(self) -> None:
+        refs = NYExtractor().extract("Section 606 Of The Tax Law applies")
+        assert refs[0].target_citation_path == "us-ny/statute/tax/606"
+
+    def test_unknown_law_name_not_matched(self) -> None:
+        # "Made-up Law" isn't in the map — skip rather than fabricate.
+        assert (
+            NYExtractor().extract("see section 123 of the made-up law") == []
+        )
+
+    def test_internal_revenue_code_not_claimed_by_ny(self) -> None:
+        # This is an IRC reference, not a NY cross-law ref.
+        assert (
+            NYExtractor().extract(
+                "section 32 of the internal revenue code"
+            )
+            == []
+        )
+
+
+class TestNYExtractorIntraCode:
+    """Bare 'section N' inside a NY rule resolves to the enclosing law code."""
+
+    def test_bare_section_resolves_against_source_path(self) -> None:
+        ext = NYExtractor(source_citation_path="us-ny/statute/tax/606")
+        refs = ext.extract("refer to section 32 for the base amount")
+        assert len(refs) == 1
+        assert refs[0].target_citation_path == "us-ny/statute/tax/32"
+        assert refs[0].confidence == 0.7  # lower — bare refs are ambiguous
+
+    def test_bare_section_with_subsection_chain(self) -> None:
+        ext = NYExtractor(source_citation_path="us-ny/statute/tax/606/a")
+        refs = ext.extract("under section 612(c)(3)")
+        assert refs[0].target_citation_path == "us-ny/statute/tax/612/c/3"
+
+    def test_no_intra_code_without_source_path(self) -> None:
+        # The extractor must not invent a scope.
+        assert NYExtractor().extract("under section 612") == []
+
+    def test_no_intra_code_when_source_not_in_us_ny(self) -> None:
+        ext = NYExtractor(source_citation_path="us/statute/26/32")
+        assert ext.extract("under section 612") == []
+
+    def test_bare_section_followed_by_cross_law_not_double_emitted(self) -> None:
+        # "section 19-0309 of the environmental conservation law" should be
+        # produced by the cross-law branch, not doubled by the intra branch.
+        ext = NYExtractor(source_citation_path="us-ny/statute/tax/606")
+        refs = ext.extract(
+            "see section 19-0309 of the environmental conservation law"
+        )
+        assert len(refs) == 1
+        assert refs[0].target_citation_path == "us-ny/statute/env/19-0309"
+        assert refs[0].confidence == 1.0
+
+    def test_bare_section_followed_by_irc_not_claimed_as_intra(self) -> None:
+        # IRC prose form must not be double-claimed as NY intra-code.
+        ext = NYExtractor(source_citation_path="us-ny/statute/tax/606")
+        refs = ext.extract("section 32 of the internal revenue code")
+        # The NY intra branch must skip this match.
+        assert refs == []
+
+    def test_mixed_cross_law_and_intra_code_in_same_body(self) -> None:
+        ext = NYExtractor(source_citation_path="us-ny/statute/tax/606")
+        refs = ext.extract(
+            "cross-refs section 612 elsewhere and section 19-0309 of the environmental conservation law"
+        )
+        paths = {r.target_citation_path for r in refs}
+        assert paths == {
+            "us-ny/statute/tax/612",
+            "us-ny/statute/env/19-0309",
+        }
+
+
 # --- Jurisdiction routing -------------------------------------------------
 
 
@@ -239,6 +342,36 @@ class TestAllExtractorsJurisdictionRouting:
     def test_us_ny_does_not_add_dc_extractor(self) -> None:
         kinds = {type(e).__name__ for e in all_extractors("us-ny")}
         assert "DCExtractor" not in kinds
+
+    def test_us_ny_adds_ny_extractor(self) -> None:
+        kinds = {type(e).__name__ for e in all_extractors("us-ny")}
+        assert "NYExtractor" in kinds
+
+    def test_ny_extractor_gets_source_path(self) -> None:
+        extractors = all_extractors(
+            "us-ny", source_citation_path="us-ny/statute/tax/606"
+        )
+        ny = [e for e in extractors if isinstance(e, NYExtractor)]
+        assert len(ny) == 1
+        assert ny[0].source_citation_path == "us-ny/statute/tax/606"
+
+    def test_extract_all_us_ny_intra_code(self) -> None:
+        refs = extract_all(
+            "see section 32 for the base",
+            jurisdiction="us-ny",
+            source_citation_path="us-ny/statute/tax/606",
+        )
+        assert len(refs) == 1
+        assert refs[0].target_citation_path == "us-ny/statute/tax/32"
+
+    def test_extract_all_us_ny_cross_law(self) -> None:
+        refs = extract_all(
+            "under section 2805-b of the public health law",
+            jurisdiction="us-ny",
+            source_citation_path="us-ny/statute/tax/606",
+        )
+        paths = {r.target_citation_path for r in refs}
+        assert "us-ny/statute/pbh/2805-b" in paths
 
     def test_extract_all_without_jurisdiction_skips_dc_pattern(self) -> None:
         # The DC pattern would greedily match this if it were active.
