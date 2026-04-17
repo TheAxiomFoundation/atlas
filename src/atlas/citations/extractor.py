@@ -136,11 +136,13 @@ class USCExtractor(Extractor):
 
         # Guard against silly matches like "100 USC 9999999" where the
         # title is plausibly a stat-volume rather than a title number.
-        # USC titles are 1–54 today.
+        # USC titles are 1–54 today. The regex already constrains title
+        # to \d{1,2}, so int() can't fail — but the except is cheap
+        # insurance.
         try:
             if not 1 <= int(title) <= 54:
                 return None
-        except ValueError:
+        except ValueError:  # pragma: no cover — regex forbids non-digits
             return None
 
         path_parts = ["us", "statute", title, section]
@@ -191,10 +193,11 @@ class CFRExtractor(Extractor):
 
     def to_ref(self, match: re.Match[str]) -> ExtractedRef | None:
         title = match.group("title")
+        # Regex forbids non-digits in <title>; the except is defensive.
         try:
             if not 1 <= int(title) <= 50:
                 return None
-        except ValueError:
+        except ValueError:  # pragma: no cover — regex forbids non-digits
             return None
 
         if match.group("partonly"):
