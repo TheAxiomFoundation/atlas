@@ -106,39 +106,67 @@ class Extractor:
 
 
 class USCExtractor(Extractor):
-    """Matches US Code citations.
+    """Matches US Code citations, whether formal or by prose.
 
-    Examples::
+    Two forms, both resolving to ``us/statute/{title}/{section}``:
 
-        42 U.S.C. 9902(2)
-        42 U.S.C. § 9902
-        26 USC 32
-        26 U.S.C. §§ 32(a)(1)
+    1. Formal volume.USC form::
 
-    Rejects bare ``NN USC`` (no section). Accepts the double ``§§`` form
-    by consuming one or both leading section markers.
+         42 U.S.C. 9902(2)
+         42 U.S.C. § 9902
+         26 USC 32
+         26 U.S.C. §§ 32(a)(1)
+
+    2. "Section N of the Internal Revenue Code" prose — common in
+       state tax statutes that incorporate federal provisions by
+       reference. Title is pinned to 26 (IRC == Title 26 USC)::
+
+         section 170(C) of the Internal Revenue Code
+         section 168 of the internal revenue code of 1986
+         section 32 of the United States Internal Revenue Code
+
+    Both produce ``pattern_kind = "usc"`` because the target namespace
+    is identical; the prose-vs-formal split is an extractor detail
+    downstream consumers shouldn't care about.
     """
 
     pattern_kind: ClassVar[str] = "usc"
 
-    # Title, optional section marker, section (with optional letter suffix),
-    # optional chain of parenthesized subsections.
-    pattern: ClassVar[re.Pattern[str]] = re.compile(
+    # Form 1 — formal "NN U.S.C." notation, with optional section sign,
+    # optional letter suffix, optional chain of parenthesized subsections.
+    _FORMAL = re.compile(
         r"\b(?P<title>\d{1,2})\s+U\.?\s?S\.?\s?C\.?\s*(?:§{1,2}\s*)?"
         r"(?P<section>\d+[A-Za-z]?)"
         rf"(?P<sub>{_SUBSECTION_CHAIN})"
     )
 
-    def to_ref(self, match: re.Match[str]) -> ExtractedRef | None:
+    # Form 2 — "section N ... Internal Revenue Code". The "Internal
+    # Revenue Code" marker pins the title to 26, so no title group.
+    _IRC = re.compile(
+        r"\bsection\s+(?P<section>\d+[A-Za-z]?)"
+        rf"(?P<sub>{_SUBSECTION_CHAIN})"
+        r"\s+of\s+the\s+(?:United\s+States\s+)?"
+        r"[Ii]nternal\s+[Rr]evenue\s+[Cc]ode"
+        r"(?:\s+of\s+\d{4})?",
+        re.IGNORECASE,
+    )
+
+    def extract(self, body: str) -> list[ExtractedRef]:
+        refs: list[ExtractedRef] = []
+        for m in self._FORMAL.finditer(body):
+            r = self._to_formal(m)
+            if r is not None:
+                refs.append(r)
+        for m in self._IRC.finditer(body):
+            refs.append(self._to_irc(m))
+        return refs
+
+    def _to_formal(self, match: re.Match[str]) -> ExtractedRef | None:
         title = match.group("title")
         section = match.group("section")
         sub = match.group("sub") or ""
 
-        # Guard against silly matches like "100 USC 9999999" where the
-        # title is plausibly a stat-volume rather than a title number.
-        # USC titles are 1–54 today. The regex already constrains title
-        # to \d{1,2}, so int() can't fail — but the except is cheap
-        # insurance.
+        # Guard against stat-volume look-alikes. USC titles are 1–54.
         try:
             if not 1 <= int(title) <= 54:
                 return None
@@ -147,12 +175,24 @@ class USCExtractor(Extractor):
 
         path_parts = ["us", "statute", title, section]
         path_parts.extend(_subsection_segments(sub))
-        target = "/".join(path_parts)
-
         return ExtractedRef(
             raw_text=match.group(0),
             pattern_kind=self.pattern_kind,
-            target_citation_path=target,
+            target_citation_path="/".join(path_parts),
+            start_offset=match.start(),
+            end_offset=match.end(),
+            confidence=1.0,
+        )
+
+    def _to_irc(self, match: re.Match[str]) -> ExtractedRef:
+        section = match.group("section")
+        sub = match.group("sub") or ""
+        path_parts = ["us", "statute", "26", section]
+        path_parts.extend(_subsection_segments(sub))
+        return ExtractedRef(
+            raw_text=match.group(0),
+            pattern_kind=self.pattern_kind,
+            target_citation_path="/".join(path_parts),
             start_offset=match.start(),
             end_offset=match.end(),
             confidence=1.0,

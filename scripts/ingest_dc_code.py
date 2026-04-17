@@ -34,11 +34,11 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-from atlas.converters.us_states import dc as dc_module  # noqa: E402
+import re as _re
+
 from atlas.converters.us_states.dc import DCConverter, DCConverterError  # noqa: E402
 from atlas.ingest.rule_converter import section_to_rules  # noqa: E402
 from atlas.ingest.rule_uploader import RuleUploader  # noqa: E402
-
 
 DC_ROOT = Path(__file__).resolve().parent.parent / (
     "sources/dc/dc-law-xml/us/dc/council/code/titles"
@@ -135,10 +135,37 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # broad catch per-file: continue the walk
             failed += 1
             if failed <= 5:
-                print(f"  parse fail {section_number}: {type(exc).__name__}: {exc}", file=sys.stderr)
+                print(
+                    f"  parse fail {section_number}: {type(exc).__name__}: {exc}", file=sys.stderr
+                )
             continue
 
         parsed += 1
+
+        # Override the upstream DCConverter's Citation(title=0, section="DC-...")
+        # workaround. DC section identifiers already encode the title as the
+        # prefix before the first dash ("47-1801.04" → title 47). Rewrite the
+        # Section's citation so section_to_rules builds paths of the form
+        # us-dc/statute/47/47-1801.04 rather than us-dc/statute/0/DC-47-1801.04.
+        title_match = _re.match(r"([^-]+)-", section_number)
+        if title_match:
+            real_title = title_match.group(1)
+            section.citation.title = 0  # keep validator happy
+            section.citation.section = section_number
+            # section_to_rules reads title + section; we need it to produce the
+            # right path without touching its signature. Monkey-patch by
+            # feeding a namespace object with our target title string.
+            _patched = type(
+                "Cit",
+                (),
+                {
+                    "title": real_title,
+                    "section": section_number,
+                    "subsection": None,
+                },
+            )()
+            section.citation = _patched
+
         rule_buffer.extend(section_to_rules(section, jurisdiction="us-dc"))
         if len(rule_buffer) >= args.batch:
             flush()

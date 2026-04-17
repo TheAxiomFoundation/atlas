@@ -59,6 +59,45 @@ class TestUSCExtractor:
         paths = {r.target_citation_path for r in refs}
         assert paths == {"us/statute/26/32", "us/statute/42/9902/2"}
 
+    # IRC prose form — same extractor, same pattern_kind, target pinned to 26.
+    def test_irc_prose_simple(self) -> None:
+        refs = USCExtractor().extract(
+            "section 32 of the Internal Revenue Code"
+        )
+        assert len(refs) == 1
+        assert refs[0].target_citation_path == "us/statute/26/32"
+        assert refs[0].pattern_kind == "usc"
+
+    def test_irc_prose_with_subsection(self) -> None:
+        refs = USCExtractor().extract(
+            "section 170(C) of the Internal Revenue Code"
+        )
+        assert refs[0].target_citation_path == "us/statute/26/170/C"
+
+    def test_irc_prose_lowercase(self) -> None:
+        refs = USCExtractor().extract(
+            "see section 168 of the internal revenue code"
+        )
+        assert refs[0].target_citation_path == "us/statute/26/168"
+
+    def test_irc_prose_with_year(self) -> None:
+        refs = USCExtractor().extract(
+            "section 32 of the Internal Revenue Code of 1986"
+        )
+        assert refs[0].target_citation_path == "us/statute/26/32"
+
+    def test_irc_prose_with_united_states_qualifier(self) -> None:
+        refs = USCExtractor().extract(
+            "section 162 of the United States Internal Revenue Code"
+        )
+        assert refs[0].target_citation_path == "us/statute/26/162"
+
+    def test_irc_prose_rejects_unqualified_section_refs(self) -> None:
+        # "section 32" alone must not be claimed by the IRC extractor —
+        # only "section N ... Internal Revenue Code" matches.
+        assert USCExtractor().extract("section 32 of the tax law") == []
+        assert USCExtractor().extract("subsection (a) of this section") == []
+
 
 # --- CFR ------------------------------------------------------------------
 
