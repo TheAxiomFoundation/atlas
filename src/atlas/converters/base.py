@@ -201,7 +201,7 @@ class LegalDocConverter(ABC):
     - doc_type: Document type (e.g., "statute", "regulation", "guidance")
 
     The convert() method chains fetch -> parse for convenience.
-    The to_rules() method converts AkomaNtoso to arch.rules dicts for DB insert.
+    The to_rules() method converts AkomaNtoso to akn.rules dicts for DB insert.
     """
 
     # Subclasses must set these
@@ -248,10 +248,10 @@ class LegalDocConverter(ABC):
         return self.parse(raw)
 
     def to_rules(self, akn: AkomaNtoso) -> Iterator[dict]:
-        """Convert AkomaNtoso to arch.rules dictionaries for DB insert.
+        """Convert AkomaNtoso to akn.rules dictionaries for DB insert.
 
         Default implementation flattens sections and subsections into
-        rule records matching the arch.rules schema.
+        rule records matching the akn.rules schema.
 
         Subclasses can override for custom conversion logic.
 
@@ -259,7 +259,7 @@ class LegalDocConverter(ABC):
             akn: Parsed AkomaNtoso document
 
         Yields:
-            Dictionaries matching arch.rules table schema
+            Dictionaries matching akn.rules table schema
         """
         for section in akn.sections:
             yield from self._section_to_rules(section)

@@ -58,7 +58,7 @@ class RuleUploader:
                             "apikey": self.key,
                             "Authorization": f"Bearer {self.key}",
                             "Content-Type": "application/json",
-                            "Content-Profile": "arch",
+                            "Content-Profile": "akn",
                             "Prefer": "resolution=ignore-duplicates,return=minimal",
                         },
                         json=rules,
