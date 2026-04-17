@@ -27,7 +27,7 @@ re-scrape unless upstream content has changed.
 | UK Public General Acts | legislation.gov.uk | CLML XML | `~/.arch/uk/ukpga/` | Complete — 3,240 acts, 1916-2025 [^counts] |
 | Canada federal statutes | laws-lois.justice.gc.ca | LIMS XML | `~/.arch/canada/` | Complete — 956 files [^counts] |
 | DC Code | lims.dccouncil.gov | DC XML | `sources/dc/dc-law-xml/` | Complete — 21,163 sections across 28,432 files |
-| 7 CFR 271–283 (SNAP) | ecfr.gov | eCFR XML | `arch.rules` (Supabase) | Complete — 210 rows, eCFR snapshot 2024-04-16, ingested 2026-04-16 via `scripts/ingest_cfr_parts.py` |
+| 7 CFR 271–283 (SNAP) | ecfr.gov | eCFR XML | `akn.rules` (Supabase) | Complete — 210 rows, eCFR snapshot 2024-04-16, ingested 2026-04-16 via `scripts/ingest_cfr_parts.py` |
 
 ### US states — complete
 

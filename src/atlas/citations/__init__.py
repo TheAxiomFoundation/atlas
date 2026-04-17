@@ -1,7 +1,7 @@
 """Citation extraction — find references in rule body text.
 
 The extractor produces :class:`ExtractedRef` records suitable for the
-``arch.rule_references`` table. One table, two consumers:
+``akn.rule_references`` table. One table, two consumers:
 
 * Atlas viewer renders body text with clickable ``<a>`` tags at the
   recorded ``(start_offset, end_offset)`` spans.

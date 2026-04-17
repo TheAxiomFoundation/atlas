@@ -1,6 +1,6 @@
 # Rule references
 
-`arch.rule_references` is Atlas's citation graph. One row per cite found
+`akn.rule_references` is Atlas's citation graph. One row per cite found
 inside a rule's body text. The same table serves two consumers:
 
 - **Atlas viewer** — renders body text with clickable `<a>` tags at the
@@ -11,9 +11,9 @@ inside a rule's body text. The same table serves two consumers:
 ## Schema
 
 ```
-source_rule_id        UUID  → arch.rules(id)
+source_rule_id        UUID  → akn.rules(id)
 target_citation_path  TEXT  "us/statute/42/9902/2"
-target_rule_id        UUID  → arch.rules(id)  NULL if target not yet ingested
+target_rule_id        UUID  → akn.rules(id)  NULL if target not yet ingested
 citation_text         TEXT  "42 U.S.C. 9902(2)"
 pattern_kind          TEXT  "usc" | "cfr" | ...
 start_offset          INT
@@ -29,7 +29,7 @@ extractor runs.
 ## The RPC
 
 ```
-arch.get_references(citation_path_in text)
+akn.get_references(citation_path_in text)
 ```
 
 Returns one row per outgoing and incoming ref for the given rule,
@@ -50,7 +50,7 @@ rule and are rendered as a "referenced by" panel on the rule page.
 Typescript:
 
 ```ts
-const { data } = await supabaseArch.rpc('get_references', {
+const { data } = await supabaseAkn.rpc('get_references', {
   citation_path_in: rule.citation_path,
 })
 
@@ -107,8 +107,8 @@ The extractor owns its rows per source rule. To re-extract (e.g. after
 improving the patterns), the backfill script does:
 
 ```
-DELETE FROM arch.rule_references WHERE source_rule_id IN (...);
-INSERT INTO arch.rule_references ... (fresh rows);
+DELETE FROM akn.rule_references WHERE source_rule_id IN (...);
+INSERT INTO akn.rule_references ... (fresh rows);
 ```
 
 per 500-rule batch. This keeps the table clean when body text or

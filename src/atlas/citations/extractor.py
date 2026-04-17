@@ -36,7 +36,7 @@ from typing import ClassVar
 class ExtractedRef:
     """A single citation found in source text.
 
-    Attributes mirror the columns of ``arch.rule_references`` — a caller
+    Attributes mirror the columns of ``akn.rule_references`` — a caller
     can append ``source_rule_id`` and insert directly.
     """
 

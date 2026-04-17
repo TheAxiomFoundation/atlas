@@ -1,8 +1,8 @@
-"""Backfill the citation graph in ``arch.rule_references``.
+"""Backfill the citation graph in ``akn.rule_references``.
 
 For every rule with a non-empty body, run the citation extractors and
 upsert one row per extracted ref. Target rule ids are resolved against
-``arch.rules.citation_path`` — unresolved targets are stored anyway so a
+``akn.rules.citation_path`` — unresolved targets are stored anyway so a
 later ingestion (or a later re-run) activates the link.
 
 Semantics
@@ -85,7 +85,7 @@ def fetch_rules_page(
         url,
         headers={
             **_auth_headers(service_key),
-            "Accept-Profile": "arch",
+            "Accept-Profile": "akn",
         },
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -117,7 +117,7 @@ def resolve_target_ids(service_key: str, citation_paths: set[str]) -> dict[str, 
             url,
             headers={
                 **_auth_headers(service_key),
-                "Accept-Profile": "arch",
+                "Accept-Profile": "akn",
             },
         )
         try:
@@ -143,7 +143,7 @@ def delete_existing(service_key: str, source_ids: list[str]) -> None:
         url,
         headers={
             **_auth_headers(service_key),
-            "Content-Profile": "arch",
+            "Content-Profile": "akn",
         },
         method="DELETE",
     )
@@ -163,7 +163,7 @@ def insert_rows(service_key: str, rows: list[dict]) -> None:
         headers={
             **_auth_headers(service_key),
             "Content-Type": "application/json",
-            "Content-Profile": "arch",
+            "Content-Profile": "akn",
             "Prefer": "return=minimal",
         },
         method="POST",
@@ -314,7 +314,7 @@ def _dry_run_page(args: argparse.Namespace) -> list[dict]:
             "apikey": anon_key,
             "Authorization": f"Bearer {anon_key}",
             "User-Agent": USER_AGENT,
-            "Accept-Profile": "arch",
+            "Accept-Profile": "akn",
         },
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
