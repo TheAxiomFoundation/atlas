@@ -89,7 +89,7 @@ _TITLE_LINK = re.compile(
     r'href="/?ohio-revised-code/(title-[0-9]+|general-provisions)"',
 )
 _CHAPTER_LINK = re.compile(
-    r'href="/?ohio-revised-code/chapter-(?P<chapter>[0-9A-Za-z.-]+?)"',
+    r'href="(?:/?ohio-revised-code/)?chapter-(?P<chapter>[0-9A-Za-z.-]+?)"',
 )
 _SECTION_LINK = re.compile(
     r'href="(?:/?ohio-revised-code/)?section-(?P<section>[0-9A-Za-z.-]+?)"',
