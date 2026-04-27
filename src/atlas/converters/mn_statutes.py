@@ -331,7 +331,7 @@ class MNStatutesToAKN:
         manif_date.set("name", "generation")
 
         manif_author = ET.SubElement(manifestation, f"{{{AKN_NS}}}FRBRauthor")
-        manif_author.set("href", "#rules-foundation")
+        manif_author.set("href", "#axiom-foundation")
 
     def _add_lifecycle(self, meta: ET.Element, section: MNSection) -> None:
         """Add lifecycle events."""

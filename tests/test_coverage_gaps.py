@@ -1297,20 +1297,20 @@ class TestPipelineRunnerGaps:
         from atlas.pipeline.runner import StatePipeline
 
         with pytest.raises(ValueError, match="No converter"):
-            pipeline = StatePipeline("zz", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+            pipeline = StatePipeline("zz", dry_run=True, r2_atlas=MagicMock())
             pipeline._load_converter()
 
     def test_load_converter_valid_state(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("ak", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("ak", dry_run=True, r2_atlas=MagicMock())
         converter = pipeline._load_converter()
         assert converter is not None
 
     def test_get_chapter_url_with_build_method(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("ak", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("ak", dry_run=True, r2_atlas=MagicMock())
         pipeline.converter = MagicMock()
         pipeline.converter._build_chapter_url = MagicMock(return_value="https://test.com")
 
@@ -1327,7 +1327,7 @@ class TestPipelineRunnerGaps:
     def test_get_chapter_url_single_param(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("fl", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("fl", dry_run=True, r2_atlas=MagicMock())
         pipeline.converter = MagicMock()
         pipeline.converter._build_chapter_url = MagicMock(return_value="https://test.com")
 
@@ -1342,7 +1342,7 @@ class TestPipelineRunnerGaps:
     def test_get_chapter_url_fallback_base_url(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("fl", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("fl", dry_run=True, r2_atlas=MagicMock())
         pipeline.converter = MagicMock(spec=[])
         pipeline.converter.base_url = "https://mystate.gov"
         url = pipeline._get_chapter_url("220")
@@ -1351,7 +1351,7 @@ class TestPipelineRunnerGaps:
     def test_get_chapter_url_absolute_fallback(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("fl", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("fl", dry_run=True, r2_atlas=MagicMock())
         pipeline.converter = MagicMock(spec=[])
         del pipeline.converter.base_url
         url = pipeline._get_chapter_url("220")
@@ -1360,7 +1360,7 @@ class TestPipelineRunnerGaps:
     def test_fetch_raw_html_with_get_method(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("ak", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("ak", dry_run=True, r2_atlas=MagicMock())
         pipeline.converter = MagicMock()
         pipeline.converter._get = MagicMock(return_value="<html/>")
         result = pipeline._fetch_raw_html("https://example.com")
@@ -1369,7 +1369,7 @@ class TestPipelineRunnerGaps:
     def test_fetch_raw_html_with_client(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("ak", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("ak", dry_run=True, r2_atlas=MagicMock())
         pipeline.converter = MagicMock(spec=["client"])
         pipeline.converter.client.get.return_value.text = "<html/>"
         del pipeline.converter._get
@@ -1379,7 +1379,7 @@ class TestPipelineRunnerGaps:
     def test_fetch_raw_html_error(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("ak", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("ak", dry_run=True, r2_atlas=MagicMock())
         pipeline.converter = MagicMock()
         pipeline.converter._get = MagicMock(side_effect=Exception("network error"))
         result = pipeline._fetch_raw_html("https://example.com")
@@ -1388,7 +1388,7 @@ class TestPipelineRunnerGaps:
     def test_get_chapters_ak(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("ak", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("ak", dry_run=True, r2_atlas=MagicMock())
         pipeline.converter = pipeline._load_converter()
         chapters = pipeline._get_chapters()
         assert len(chapters) > 0
@@ -1396,7 +1396,7 @@ class TestPipelineRunnerGaps:
     def test_get_chapters_standard_state(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("fl", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("fl", dry_run=True, r2_atlas=MagicMock())
         pipeline.converter = pipeline._load_converter()
         chapters = pipeline._get_chapters()
         assert len(chapters) > 0
@@ -1405,9 +1405,8 @@ class TestPipelineRunnerGaps:
         """Test full pipeline run in dry_run mode."""
         from atlas.pipeline.runner import StatePipeline
 
-        r2_arch = MagicMock()
-        r2_rules = MagicMock()
-        pipeline = StatePipeline("ak", dry_run=True, r2_arch=r2_arch, r2_rules=r2_rules)
+        r2_atlas = MagicMock()
+        pipeline = StatePipeline("ak", dry_run=True, r2_atlas=r2_atlas)
 
         # Mock the converter to return sections
         mock_converter = MagicMock()
@@ -1426,14 +1425,14 @@ class TestPipelineRunnerGaps:
     def test_run_converter_load_error(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("zz", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("zz", dry_run=True, r2_atlas=MagicMock())
         stats = pipeline.run()
         assert stats["sections_found"] == 0
 
     def test_run_no_chapters(self):
         from atlas.pipeline.runner import StatePipeline
 
-        pipeline = StatePipeline("ak", dry_run=True, r2_arch=MagicMock(), r2_rules=MagicMock())
+        pipeline = StatePipeline("ak", dry_run=True, r2_atlas=MagicMock())
         mock_converter = MagicMock()
 
         with patch.object(pipeline, "_load_converter", return_value=mock_converter):

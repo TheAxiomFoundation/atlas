@@ -2,13 +2,11 @@
 
 This module runs the full pipeline for processing state statutes:
 1. Fetch raw HTML from state legislature websites
-2. Archive raw HTML to R2 arch bucket
+2. Archive raw HTML to R2 atlas bucket
 3. Parse into sections using state-specific converters
-4. Convert to Akoma Ntoso XML
-5. Upload AKN XML to R2 rules-xml bucket
+4. Generate Akoma Ntoso XML in memory for converter validation
 """
 
-import hashlib
 import importlib
 import inspect
 import time
@@ -17,7 +15,7 @@ from typing import Any
 
 from atlas.models import Section
 from atlas.pipeline.akn import section_to_akn_xml
-from atlas.storage.r2 import R2Storage, get_r2_atlas, get_r2_rules_xml
+from atlas.storage.r2 import R2Storage, get_r2_atlas
 
 
 # State converter module paths
@@ -78,33 +76,30 @@ class StatePipeline:
     Example:
         >>> pipeline = StatePipeline("ak")
         >>> stats = pipeline.run()
-        >>> print(f"Uploaded {stats['akn_uploaded']} sections")
+        >>> print(f"Generated XML for {stats['xml_generated']} sections")
     """
 
     def __init__(
         self,
         state: str,
         dry_run: bool = False,
-        r2_arch: R2Storage | None = None,
-        r2_rules: R2Storage | None = None,
+        r2_atlas: R2Storage | None = None,
     ):
         """Initialize the pipeline.
 
         Args:
             state: Two-letter state code (e.g., 'ak', 'ny')
             dry_run: If True, don't upload anything
-            r2_arch: Optional pre-configured R2Storage for arch bucket
-            r2_rules: Optional pre-configured R2Storage for rules-xml bucket
+            r2_atlas: Optional pre-configured R2Storage for the atlas bucket
         """
         self.state = state.lower()
         self.dry_run = dry_run
-        self.r2_arch = r2_arch or get_r2_atlas()
-        self.r2_rules = r2_rules or get_r2_rules_xml()
+        self.r2_atlas = r2_atlas or get_r2_atlas()
         self.converter: Any = None
         self.stats = {
             "sections_found": 0,
             "raw_uploaded": 0,
-            "akn_uploaded": 0,
+            "xml_generated": 0,
             "errors": 0,
         }
 
@@ -251,7 +246,7 @@ class StatePipeline:
         """Run the pipeline for this state.
 
         Returns:
-            Stats dict with sections_found, raw_uploaded, akn_uploaded, errors
+            Stats dict with sections_found, raw_uploaded, xml_generated, errors
         """
         print(f"\n{'='*60}")
         print(f"Processing {self.state.upper()}")
@@ -289,12 +284,12 @@ class StatePipeline:
                 url = self._get_chapter_url(chapter_num, title_or_code)
                 raw_html = self._fetch_raw_html(url)
 
-                # 2. Archive raw HTML to R2 arch bucket (chapter level)
+                # 2. Archive raw HTML to R2 atlas bucket (chapter level)
                 safe_chapter = display_name.replace("/", "-").replace(".", "-")
                 raw_key = f"us/statutes/states/{self.state}/raw/chapter-{safe_chapter}.html"
 
                 if raw_html and not self.dry_run:
-                    self.r2_arch.upload_raw(
+                    self.r2_atlas.upload_raw(
                         raw_key,
                         raw_html,
                         metadata={
@@ -316,34 +311,17 @@ class StatePipeline:
                 print(f"{len(sections)} sections")
                 self.stats["sections_found"] += len(sections)
 
-                # 4. Convert each section to AKN and upload
+                # 4. Convert each section to XML in memory. Generated XML is not stored.
                 for section in sections:
                     section_id = (
                         section.citation.section
                         if hasattr(section.citation, "section")
                         else str(section.citation)
                     )
-                    safe_id = section_id.replace("/", "-").replace(".", "-")
 
                     try:
-                        # Convert to AKN
-                        akn_xml = section_to_akn_xml(section, self.state)
-
-                        # Upload AKN to rules-xml bucket
-                        akn_key = f"us/statutes/states/{self.state}/{safe_id}.xml"
-
-                        if not self.dry_run:
-                            self.r2_rules.upload_raw(
-                                akn_key,
-                                akn_xml,
-                                metadata={
-                                    "raw-key": raw_key,
-                                    "state": self.state,
-                                    "section-id": section_id,
-                                    "chapter": display_name,
-                                },
-                            )
-                        self.stats["akn_uploaded"] += 1
+                        section_to_akn_xml(section, self.state)
+                        self.stats["xml_generated"] += 1
 
                     except Exception as e:  # pragma: no cover
                         print(f"    ERROR {section_id}: {e}")  # pragma: no cover

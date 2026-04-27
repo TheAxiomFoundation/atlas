@@ -83,7 +83,7 @@ class TestSectionToAknXml:
     def test_references_section(self):
         section = _make_section()
         xml = section_to_akn_xml(section, "oh")
-        assert "rules-foundation" in xml
+        assert "axiom-foundation" in xml
 
     def test_xml_is_valid(self):
         from xml.etree import ElementTree as ET

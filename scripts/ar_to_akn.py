@@ -61,7 +61,7 @@ def section_to_akn_xml(section, title_num: int, chapter_num: int) -> str:
 
     # Identification block
     identification = ET.SubElement(meta, f"{{{AKN_NS}}}identification")
-    identification.set("source", "#rules-foundation")
+    identification.set("source", "#axiom-foundation")
 
     # Extract section number from citation (e.g., "AR-26-51-101" -> "26-51-101")
     section_id = section.citation.section.replace("AR-", "")
@@ -107,7 +107,7 @@ def section_to_akn_xml(section, title_num: int, chapter_num: int) -> str:
     expr_date.set("name", "generation")
 
     expr_author = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRauthor")
-    expr_author.set("href", "#rules-foundation")
+    expr_author.set("href", "#axiom-foundation")
 
     expr_lang = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRlanguage")
     expr_lang.set("language", "eng")
@@ -126,11 +126,11 @@ def section_to_akn_xml(section, title_num: int, chapter_num: int) -> str:
     manif_date.set("name", "generation")
 
     manif_author = ET.SubElement(manifestation, f"{{{AKN_NS}}}FRBRauthor")
-    manif_author.set("href", "#rules-foundation")
+    manif_author.set("href", "#axiom-foundation")
 
     # References
     references = ET.SubElement(meta, f"{{{AKN_NS}}}references")
-    references.set("source", "#rules-foundation")
+    references.set("source", "#axiom-foundation")
 
     # TLC Organizations
     tlc_ar = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
@@ -139,7 +139,7 @@ def section_to_akn_xml(section, title_num: int, chapter_num: int) -> str:
     tlc_ar.set("showAs", "Arkansas General Assembly")
 
     tlc_rf = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
-    tlc_rf.set("eId", "rules-foundation")
+    tlc_rf.set("eId", "axiom-foundation")
     tlc_rf.set("href", "https://axiom-foundation.org")
     tlc_rf.set("showAs", "The Axiom Foundation")
 
@@ -257,7 +257,7 @@ def create_chapter_index(
 
     meta = ET.SubElement(act, f"{{{AKN_NS}}}meta")
     identification = ET.SubElement(meta, f"{{{AKN_NS}}}identification")
-    identification.set("source", "#rules-foundation")
+    identification.set("source", "#axiom-foundation")
 
     today = date.today().isoformat()
 
@@ -287,7 +287,7 @@ def create_chapter_index(
     expr_date.set("date", today)
     expr_date.set("name", "generation")
     expr_author = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRauthor")
-    expr_author.set("href", "#rules-foundation")
+    expr_author.set("href", "#axiom-foundation")
     expr_lang = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRlanguage")
     expr_lang.set("language", "eng")
 
@@ -305,7 +305,7 @@ def create_chapter_index(
     manif_date.set("date", today)
     manif_date.set("name", "generation")
     manif_author = ET.SubElement(manifestation, f"{{{AKN_NS}}}FRBRauthor")
-    manif_author.set("href", "#rules-foundation")
+    manif_author.set("href", "#axiom-foundation")
 
     # Body
     body = ET.SubElement(act, f"{{{AKN_NS}}}body")

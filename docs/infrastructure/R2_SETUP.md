@@ -1,19 +1,19 @@
 # Cloudflare R2 Setup
 
-Arch uses Cloudflare R2 for storing raw source files (PDFs, XML, ZIPs).
+Atlas uses Cloudflare R2 for storing raw source files (PDFs, XML, ZIPs).
 
 ## Bucket Configuration
 
 | Setting | Value |
 |---------|-------|
-| Bucket name | `arch` |
+| Bucket name | `atlas` |
 | Region | Auto (global) |
 | Storage class | Standard |
 
 ## Directory Structure
 
 ```
-arch (R2 bucket)/
+atlas (R2 bucket)/
 ├── sources/
 │   ├── statutes/
 │   │   ├── us/
@@ -49,7 +49,7 @@ arch (R2 bucket)/
 ## Status
 
 ✅ **Bucket created**: 2024-12-28
-✅ **API credentials configured**: `arch-s3-api` token
+✅ **API credentials configured**: `atlas-s3-api` token
 ✅ **Data migrated** from legacy bucket (11 objects, 61.5 MB)
 
 ## API Credentials
@@ -62,7 +62,7 @@ Environment variables for scripts:
 # Load from config file
 export R2_ACCOUNT_ID="010d8d7f3b423be5ce36c7a5a49e91e4"
 export R2_ENDPOINT="https://010d8d7f3b423be5ce36c7a5a49e91e4.r2.cloudflarestorage.com"
-export R2_BUCKET="arch"
+export R2_BUCKET="atlas"
 # Access key and secret from ~/.config/axiom-foundation/r2-credentials.json
 ```
 
@@ -72,10 +72,10 @@ For CI/CD, add secrets:
 
 ## Wrangler CLI
 
-For bucket management, use the `arch-r2` Cloudflare API token:
+For bucket management, use the configured Cloudflare API credentials:
 
 ```bash
-export CLOUDFLARE_API_TOKEN="<arch-r2-token>"
+export CLOUDFLARE_API_TOKEN="<cloudflare-api-token>"
 wrangler r2 bucket list
 ```
 
@@ -97,39 +97,39 @@ s3 = boto3.client(
 # Upload a file
 s3.upload_file(
     'local-file.pdf',
-    'arch',
+    'atlas',
     'sources/guidance/irs/rev-proc/rev-proc-2024-01.pdf'
 )
 
 # Download a file
 s3.download_file(
-    'arch',
+    'atlas',
     'sources/statutes/us/usc/26/32.xml',
     'local-copy.xml'
 )
 
 # List files
 response = s3.list_objects_v2(
-    Bucket='arch',
+    Bucket='atlas',
     Prefix='sources/guidance/irs/'
 )
 for obj in response.get('Contents', []):
     print(obj['Key'])
 ```
 
-## Integration with Arch
+## Integration with Atlas
 
-The `arch` CLI will support R2 operations:
+Atlas R2 operations use the configured `atlas` bucket:
 
 ```bash
 # Upload local data to R2
-arch sync --to-r2
+atlas sync --to-r2
 
 # Download from R2 to local
-arch sync --from-r2
+atlas sync --from-r2
 
 # Upload specific source type
-arch sync --to-r2 --type=guidance
+atlas sync --to-r2 --type=guidance
 ```
 
 ## Related Documentation

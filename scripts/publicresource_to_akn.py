@@ -234,11 +234,11 @@ def create_akn_xml(section: dict, state: str, config: dict) -> str:
     manif_date.set("date", str(date.today()))
     manif_date.set("name", "generation")
     manif_author = ET.SubElement(manif, f"{{{AKN_NS}}}FRBRauthor")
-    manif_author.set("href", "#rules-foundation")
+    manif_author.set("href", "#axiom-foundation")
 
     # References
     references = ET.SubElement(meta, f"{{{AKN_NS}}}references")
-    references.set("source", "#rules-foundation")
+    references.set("source", "#axiom-foundation")
 
     org_legislature = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
     org_legislature.set("eId", f"{state}-legislature")
@@ -251,7 +251,7 @@ def create_akn_xml(section: dict, state: str, config: dict) -> str:
     org_publicresource.set("showAs", "Public.Resource.Org")
 
     org_rf = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
-    org_rf.set("eId", "rules-foundation")
+    org_rf.set("eId", "axiom-foundation")
     org_rf.set("href", "https://axiom-foundation.org")
     org_rf.set("showAs", "The Axiom Foundation")
 

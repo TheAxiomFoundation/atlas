@@ -296,7 +296,7 @@ def create_akn_xml(section: dict, title_num: str, title_name: str) -> str:
     expr_date.set("name", "generation")
 
     expr_author = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRauthor")
-    expr_author.set("href", "#rules-foundation")
+    expr_author.set("href", "#axiom-foundation")
 
     expr_lang = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRlanguage")
     expr_lang.set("language", "eng")
@@ -315,11 +315,11 @@ def create_akn_xml(section: dict, title_num: str, title_name: str) -> str:
     manif_date.set("name", "generation")
 
     manif_author = ET.SubElement(manifestation, f"{{{AKN_NS}}}FRBRauthor")
-    manif_author.set("href", "#rules-foundation")
+    manif_author.set("href", "#axiom-foundation")
 
     # References
     references = ET.SubElement(meta, f"{{{AKN_NS}}}references")
-    references.set("source", "#rules-foundation")
+    references.set("source", "#axiom-foundation")
 
     tlc_njleg = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
     tlc_njleg.set("eId", "njleg")
@@ -327,7 +327,7 @@ def create_akn_xml(section: dict, title_num: str, title_name: str) -> str:
     tlc_njleg.set("showAs", "New Jersey Legislature")
 
     tlc_rf = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
-    tlc_rf.set("eId", "rules-foundation")
+    tlc_rf.set("eId", "axiom-foundation")
     tlc_rf.set("href", "https://axiom-foundation.org")
     tlc_rf.set("showAs", "The Axiom Foundation")
 
@@ -447,7 +447,7 @@ def create_title_index_xml(title_num: str, title_name: str, sections: list[dict]
     expr_date.set("name", "generation")
 
     expr_author = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRauthor")
-    expr_author.set("href", "#rules-foundation")
+    expr_author.set("href", "#axiom-foundation")
 
     expr_lang = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRlanguage")
     expr_lang.set("language", "eng")
@@ -466,11 +466,11 @@ def create_title_index_xml(title_num: str, title_name: str, sections: list[dict]
     manif_date.set("name", "generation")
 
     manif_author = ET.SubElement(manifestation, f"{{{AKN_NS}}}FRBRauthor")
-    manif_author.set("href", "#rules-foundation")
+    manif_author.set("href", "#axiom-foundation")
 
     # References
     references = ET.SubElement(meta, f"{{{AKN_NS}}}references")
-    references.set("source", "#rules-foundation")
+    references.set("source", "#axiom-foundation")
 
     tlc_njleg = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
     tlc_njleg.set("eId", "njleg")
@@ -478,7 +478,7 @@ def create_title_index_xml(title_num: str, title_name: str, sections: list[dict]
     tlc_njleg.set("showAs", "New Jersey Legislature")
 
     tlc_rf = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
-    tlc_rf.set("eId", "rules-foundation")
+    tlc_rf.set("eId", "axiom-foundation")
     tlc_rf.set("href", "https://axiom-foundation.org")
     tlc_rf.set("showAs", "The Axiom Foundation")
 

@@ -328,7 +328,7 @@ def create_akn_document(data: dict) -> ET.Element:
     expr_uri = f"{work_uri}/eng@{today}"
     manif_uri = f"{expr_uri}/main"
 
-    identification = make_subelement(meta, "identification", {"source": "#rules-foundation"})
+    identification = make_subelement(meta, "identification", {"source": "#axiom-foundation"})
 
     # FRBRWork
     frbr_work = make_subelement(identification, "FRBRWork")
@@ -345,7 +345,7 @@ def create_akn_document(data: dict) -> ET.Element:
     make_subelement(frbr_expr, "FRBRthis", {"value": expr_uri})
     make_subelement(frbr_expr, "FRBRuri", {"value": expr_uri})
     make_subelement(frbr_expr, "FRBRdate", {"date": today, "name": "generation"})
-    make_subelement(frbr_expr, "FRBRauthor", {"href": "#rules-foundation"})
+    make_subelement(frbr_expr, "FRBRauthor", {"href": "#axiom-foundation"})
     make_subelement(frbr_expr, "FRBRlanguage", {"language": "eng"})
 
     # FRBRManifestation
@@ -353,10 +353,10 @@ def create_akn_document(data: dict) -> ET.Element:
     make_subelement(frbr_manif, "FRBRthis", {"value": manif_uri})
     make_subelement(frbr_manif, "FRBRuri", {"value": manif_uri})
     make_subelement(frbr_manif, "FRBRdate", {"date": today, "name": "generation"})
-    make_subelement(frbr_manif, "FRBRauthor", {"href": "#rules-foundation"})
+    make_subelement(frbr_manif, "FRBRauthor", {"href": "#axiom-foundation"})
 
     # References
-    references = make_subelement(meta, "references", {"source": "#rules-foundation"})
+    references = make_subelement(meta, "references", {"source": "#axiom-foundation"})
     make_subelement(
         references,
         "TLCOrganization",
@@ -370,7 +370,7 @@ def create_akn_document(data: dict) -> ET.Element:
         references,
         "TLCOrganization",
         {
-            "eId": "rules-foundation",
+            "eId": "axiom-foundation",
             "href": "https://axiom-foundation.org",
             "showAs": "The Axiom Foundation",
         },

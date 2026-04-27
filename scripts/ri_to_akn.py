@@ -122,7 +122,7 @@ def create_akn_xml(title_data: dict) -> str:
 
     # Identification block
     identification = ET.SubElement(meta, f"{{{AKN_NS}}}identification")
-    identification.set("source", "#rules-foundation")
+    identification.set("source", "#axiom-foundation")
 
     title_num = title_data["title_number"] or "unknown"
     today = date.today().isoformat()
@@ -166,7 +166,7 @@ def create_akn_xml(title_data: dict) -> str:
     expr_date.set("name", "generation")
 
     expr_author = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRauthor")
-    expr_author.set("href", "#rules-foundation")
+    expr_author.set("href", "#axiom-foundation")
 
     expr_lang = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRlanguage")
     expr_lang.set("language", "eng")
@@ -185,11 +185,11 @@ def create_akn_xml(title_data: dict) -> str:
     manif_date.set("name", "generation")
 
     manif_author = ET.SubElement(manifestation, f"{{{AKN_NS}}}FRBRauthor")
-    manif_author.set("href", "#rules-foundation")
+    manif_author.set("href", "#axiom-foundation")
 
     # References
     references = ET.SubElement(meta, f"{{{AKN_NS}}}references")
-    references.set("source", "#rules-foundation")
+    references.set("source", "#axiom-foundation")
 
     # TLC Organization for Rhode Island
     tlc_org = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
@@ -198,7 +198,7 @@ def create_akn_xml(title_data: dict) -> str:
     tlc_org.set("showAs", "Rhode Island General Assembly")
 
     tlc_rf = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
-    tlc_rf.set("eId", "rules-foundation")
+    tlc_rf.set("eId", "axiom-foundation")
     tlc_rf.set("href", "https://axiom-foundation.org")
     tlc_rf.set("showAs", "The Axiom Foundation")
 

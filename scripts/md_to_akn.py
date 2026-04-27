@@ -110,7 +110,7 @@ def create_akn_xml(section: Section, article_code: str, article_name: str) -> st
     expr_date.set("date", str(date.today()))
     expr_date.set("name", "publication")
     expr_author = ET.SubElement(expr, f"{{{AKN_NS}}}FRBRauthor")
-    expr_author.set("href", "#rules-foundation")
+    expr_author.set("href", "#axiom-foundation")
     expr_lang = ET.SubElement(expr, f"{{{AKN_NS}}}FRBRlanguage")
     expr_lang.set("language", "eng")
 
@@ -124,11 +124,11 @@ def create_akn_xml(section: Section, article_code: str, article_name: str) -> st
     manif_date.set("date", str(date.today()))
     manif_date.set("name", "generation")
     manif_author = ET.SubElement(manif, f"{{{AKN_NS}}}FRBRauthor")
-    manif_author.set("href", "#rules-foundation")
+    manif_author.set("href", "#axiom-foundation")
 
     # References
     references = ET.SubElement(meta, f"{{{AKN_NS}}}references")
-    references.set("source", "#rules-foundation")
+    references.set("source", "#axiom-foundation")
 
     org_legislature = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
     org_legislature.set("eId", "maryland-ga")
@@ -136,7 +136,7 @@ def create_akn_xml(section: Section, article_code: str, article_name: str) -> st
     org_legislature.set("showAs", "Maryland General Assembly")
 
     org_rf = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
-    org_rf.set("eId", "rules-foundation")
+    org_rf.set("eId", "axiom-foundation")
     org_rf.set("href", "https://axiom-foundation.org")
     org_rf.set("showAs", "The Axiom Foundation")
 

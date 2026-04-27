@@ -26,7 +26,7 @@ def main():
     total_stats = {
         "sections_found": 0,
         "raw_uploaded": 0,
-        "akn_uploaded": 0,
+        "xml_generated": 0,
         "errors": 0,
     }
 
@@ -40,14 +40,14 @@ def main():
         print(f"\n  {state.upper()} Stats:")
         print(f"    Sections found: {stats['sections_found']}")
         print(f"    Raw uploaded:   {stats['raw_uploaded']}")
-        print(f"    AKN uploaded:   {stats['akn_uploaded']}")
+        print(f"    XML generated:  {stats['xml_generated']}")
         print(f"    Errors:         {stats['errors']}")
 
     print(f"\n{'='*60}")
     print("TOTAL STATS:")
     print(f"  Sections found: {total_stats['sections_found']}")
     print(f"  Raw uploaded:   {total_stats['raw_uploaded']}")
-    print(f"  AKN uploaded:   {total_stats['akn_uploaded']}")
+    print(f"  XML generated:  {total_stats['xml_generated']}")
     print(f"  Errors:         {total_stats['errors']}")
 
 

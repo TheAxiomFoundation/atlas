@@ -88,7 +88,7 @@ def create_akn_document(
     today = date.today()
 
     identification = Identification(
-        source="#rules-foundation",
+        source="#axiom-foundation",
         work=FRBRWork(
             uri=FRBRUri(value=work_uri),
             date=FRBRDate(value=today, name="enactment"),
@@ -99,14 +99,14 @@ def create_akn_document(
         expression=FRBRExpression(
             uri=FRBRUri(value=f"{work_uri}/eng@{today.isoformat()}"),
             date=FRBRDate(value=today, name="publication"),
-            author=FRBRAuthor(href="#rules-foundation"),
+            author=FRBRAuthor(href="#axiom-foundation"),
             language=FRBRLanguage(language="en"),
             this=f"{work_uri}/eng@{today.isoformat()}/main",
         ),
         manifestation=FRBRManifestation(
             uri=FRBRUri(value=f"{work_uri}/eng@{today.isoformat()}.akn"),
             date=FRBRDate(value=today, name="transformation"),
-            author=FRBRAuthor(href="#rules-foundation"),
+            author=FRBRAuthor(href="#axiom-foundation"),
             this=f"{work_uri}/eng@{today.isoformat()}/main.akn",
         ),
     )

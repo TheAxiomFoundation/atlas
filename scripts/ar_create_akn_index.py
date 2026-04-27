@@ -99,7 +99,7 @@ def create_title_xml(title_num: int, title_name: str, chapters: dict[int, str]) 
 
     meta = ET.SubElement(act, f"{{{AKN_NS}}}meta")
     identification = ET.SubElement(meta, f"{{{AKN_NS}}}identification")
-    identification.set("source", "#rules-foundation")
+    identification.set("source", "#axiom-foundation")
 
     today = date.today().isoformat()
 
@@ -131,7 +131,7 @@ def create_title_xml(title_num: int, title_name: str, chapters: dict[int, str]) 
     expr_date.set("date", today)
     expr_date.set("name", "generation")
     expr_author = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRauthor")
-    expr_author.set("href", "#rules-foundation")
+    expr_author.set("href", "#axiom-foundation")
     expr_lang = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRlanguage")
     expr_lang.set("language", "eng")
 
@@ -145,11 +145,11 @@ def create_title_xml(title_num: int, title_name: str, chapters: dict[int, str]) 
     manif_date.set("date", today)
     manif_date.set("name", "generation")
     manif_author = ET.SubElement(manifestation, f"{{{AKN_NS}}}FRBRauthor")
-    manif_author.set("href", "#rules-foundation")
+    manif_author.set("href", "#axiom-foundation")
 
     # References
     references = ET.SubElement(meta, f"{{{AKN_NS}}}references")
-    references.set("source", "#rules-foundation")
+    references.set("source", "#axiom-foundation")
 
     tlc_ar = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
     tlc_ar.set("eId", "ar-legislature")
@@ -157,7 +157,7 @@ def create_title_xml(title_num: int, title_name: str, chapters: dict[int, str]) 
     tlc_ar.set("showAs", "Arkansas General Assembly")
 
     tlc_rf = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
-    tlc_rf.set("eId", "rules-foundation")
+    tlc_rf.set("eId", "axiom-foundation")
     tlc_rf.set("href", "https://axiom-foundation.org")
     tlc_rf.set("showAs", "The Axiom Foundation")
 
@@ -205,7 +205,7 @@ def create_chapter_placeholder(title_num: int, chapter_num: int, chapter_name: s
 
     meta = ET.SubElement(act, f"{{{AKN_NS}}}meta")
     identification = ET.SubElement(meta, f"{{{AKN_NS}}}identification")
-    identification.set("source", "#rules-foundation")
+    identification.set("source", "#axiom-foundation")
 
     today = date.today().isoformat()
 
@@ -235,7 +235,7 @@ def create_chapter_placeholder(title_num: int, chapter_num: int, chapter_name: s
     expr_date.set("date", today)
     expr_date.set("name", "generation")
     expr_author = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRauthor")
-    expr_author.set("href", "#rules-foundation")
+    expr_author.set("href", "#axiom-foundation")
     expr_lang = ET.SubElement(expression, f"{{{AKN_NS}}}FRBRlanguage")
     expr_lang.set("language", "eng")
 
@@ -253,7 +253,7 @@ def create_chapter_placeholder(title_num: int, chapter_num: int, chapter_name: s
     manif_date.set("date", today)
     manif_date.set("name", "generation")
     manif_author = ET.SubElement(manifestation, f"{{{AKN_NS}}}FRBRauthor")
-    manif_author.set("href", "#rules-foundation")
+    manif_author.set("href", "#axiom-foundation")
 
     # Body
     body = ET.SubElement(act, f"{{{AKN_NS}}}body")

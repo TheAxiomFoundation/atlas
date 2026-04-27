@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from atlas.storage.r2 import R2Storage, get_r2, get_r2_atlas, get_r2_rules_xml
+from atlas.storage.r2 import R2Storage, get_r2, get_r2_atlas
 
 
 class TestR2StorageInit:
@@ -44,7 +44,7 @@ class TestR2StorageFromConfig:
     @patch("builtins.open", mock_open(read_data='{"endpoint_url": "https://r2.example.com", "access_key_id": "key", "secret_access_key": "secret"}'))
     def test_from_config_custom_path(self, mock_boto3):
         r2 = R2Storage.from_config(config_path="/custom/path.json")
-        assert r2.bucket == "arch"  # default when not in config
+        assert r2.bucket == "atlas"  # default when not in config
 
     @patch("atlas.storage.r2.boto3")
     @patch("builtins.open", side_effect=FileNotFoundError)
@@ -291,11 +291,4 @@ class TestConvenienceFunctions:
         mock_r2 = MagicMock()
         mock_from_config.return_value = mock_r2
         result = get_r2_atlas()
-        assert result is mock_r2
-
-    @patch("atlas.storage.r2.R2Storage.from_config")
-    def test_get_r2_rules_xml(self, mock_from_config):
-        mock_r2 = MagicMock()
-        mock_from_config.return_value = mock_r2
-        result = get_r2_rules_xml()
         assert result is mock_r2

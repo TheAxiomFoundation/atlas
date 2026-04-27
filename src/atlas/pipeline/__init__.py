@@ -1,4 +1,4 @@
-"""Statute processing pipeline: fetch → R2 arch → convert → R2 rules-xml."""
+"""Statute processing pipeline: fetch → R2 atlas → parse → validate XML."""
 
 from atlas.pipeline.runner import StatePipeline
 from atlas.pipeline.akn import section_to_akn_xml

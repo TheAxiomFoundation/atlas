@@ -42,7 +42,7 @@ class R2Storage:
             endpoint_url: R2 S3-compatible endpoint
             access_key_id: R2 access key
             secret_access_key: R2 secret key
-            bucket: Bucket name (default: arch)
+            bucket: Bucket name (default: atlas)
         """
         self.bucket = bucket
         self.client = boto3.client(
@@ -72,7 +72,7 @@ class R2Storage:
             endpoint_url=creds["endpoint_url"],
             access_key_id=creds["access_key_id"],
             secret_access_key=creds["secret_access_key"],
-            bucket=creds.get("bucket", "arch"),
+            bucket=creds.get("bucket", "atlas"),
         )
 
     def upload_raw(
@@ -288,9 +288,3 @@ def get_r2() -> R2Storage:
 def get_r2_atlas() -> R2Storage:
     """Get R2Storage for atlas bucket (legal documents - statutes, guidance, regulations)."""
     return R2Storage.from_config()
-
-
-def get_r2_rules_xml() -> R2Storage:
-    """Get R2Storage for rules-xml bucket."""
-    config_path = Path.home() / ".config" / "axiom-foundation" / "r2-rules-xml-credentials.json"
-    return R2Storage.from_config(config_path)

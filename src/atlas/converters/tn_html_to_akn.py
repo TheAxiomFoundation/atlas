@@ -446,11 +446,11 @@ class TennesseeToAKN:
         manif_date.set("name", "generation")
 
         manif_author = ET.SubElement(frbr_manif, f"{{{AKN_NS}}}FRBRauthor")
-        manif_author.set("href", "#rules-foundation")
+        manif_author.set("href", "#axiom-foundation")
 
         # References
         references = ET.SubElement(meta, f"{{{AKN_NS}}}references")
-        references.set("source", "#rules-foundation")
+        references.set("source", "#axiom-foundation")
 
         org1 = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
         org1.set("eId", "tennessee-legislature")
@@ -463,7 +463,7 @@ class TennesseeToAKN:
         org2.set("showAs", "Public.Resource.Org")
 
         org3 = ET.SubElement(references, f"{{{AKN_NS}}}TLCOrganization")
-        org3.set("eId", "rules-foundation")
+        org3.set("eId", "axiom-foundation")
         org3.set("href", "https://axiom-foundation.org")
         org3.set("showAs", "The Axiom Foundation")
 

@@ -1,6 +1,6 @@
 """Tests for the pipeline CLI module.
 
-Note: The pipeline module has an import dependency on get_r2_arch which
+Note: The pipeline module has an import dependency on get_r2_atlas which
 may not exist. Tests handle import failures gracefully.
 """
 
@@ -26,7 +26,7 @@ class TestPipelineCLI:
         mock_pipeline.run.return_value = {
             "sections_found": 10,
             "raw_uploaded": 10,
-            "akn_uploaded": 10,
+            "xml_generated": 10,
             "errors": 0,
         }
 
@@ -43,7 +43,7 @@ class TestPipelineCLI:
         mock_pipeline.run.return_value = {
             "sections_found": 5,
             "raw_uploaded": 5,
-            "akn_uploaded": 5,
+            "xml_generated": 5,
             "errors": 0,
         }
 
@@ -60,7 +60,7 @@ class TestPipelineCLI:
         mock_pipeline.run.return_value = {
             "sections_found": 0,
             "raw_uploaded": 0,
-            "akn_uploaded": 0,
+            "xml_generated": 0,
             "errors": 0,
         }
 
