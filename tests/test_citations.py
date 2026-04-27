@@ -433,6 +433,16 @@ class TestCAExtractorIntraCode:
 
 
 class TestAllExtractorsJurisdictionRouting:
+    def test_state_extractor_requires_law_codes(self) -> None:
+        from atlas.citations.extractor import _StateSectionExtractor
+
+        with pytest.raises(TypeError, match="must define a non-empty"):
+            type(
+                "EmptyStateExtractor",
+                (_StateSectionExtractor,),
+                {"jurisdiction": "us-zz"},
+            )
+
     def test_no_jurisdiction_runs_only_federal(self) -> None:
         kinds = {type(e).__name__ for e in all_extractors()}
         assert kinds == {"USCExtractor", "CFRExtractor"}
