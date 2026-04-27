@@ -1,6 +1,6 @@
 -- Rename 'arch' to 'arch'.
 --
--- Reason: 'arch' is being repurposed as Cosilico's namespace for raw
+-- Reason: 'arch' is being repurposed as Axiom's namespace for raw
 -- source-data files (microdata, aggregates). In Atlas, the data in
 -- this schema is structured, normalized, citation-addressable — more
 -- Akoma Ntoso-inspired than archival-raw. 'arch' names the layer; a

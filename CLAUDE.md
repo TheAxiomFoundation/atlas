@@ -159,7 +159,7 @@ pytest tests/test_models.py::TestCitation::test_parse_simple_citation -v
 
 ## Notes
 
-This repo was moved from CosilicoAI to TheAxiomFoundation in Jan 2026. All references have since been updated to The Axiom Foundation.
+This repo moved to TheAxiomFoundation in Jan 2026. All references have since been updated to The Axiom Foundation.
 
 - **GitHub**: `TheAxiomFoundation/atlas`
 - **Local**: `/Users/maxghenis/TheAxiomFoundation/atlas`

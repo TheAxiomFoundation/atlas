@@ -140,7 +140,7 @@ def parse_section_html(html: str) -> tuple[str, str, str, str] | None:
 def build_akn_xml(
     chapter: str, act: str, section: str, heading: str, body: str
 ) -> str:
-    """Emit an AKN-3.0 document matching the shape Cosilico's NY/CA files use."""
+    """Emit an AKN-3.0 document matching the existing NY/CA file shape."""
     citation = f"{chapter} ILCS {act}/{section}"
     eid = f"sec_{chapter}_{act}_{section}".replace(".", "_").replace("-", "_")
     paras = [p for p in re.split(r"\n\n+", body) if p.strip()]
