@@ -160,6 +160,6 @@ Apache 2.0
 
 ## Related Repos
 
-- [rac](https://github.com/TheAxiomFoundation/rac) — Rules as Code DSL
+- [rulespec-compile](https://github.com/TheAxiomFoundation/rulespec-compile) — RuleSpec compiler and DSL tooling
 - [autorulespec](https://github.com/TheAxiomFoundation/autorulespec) — AI-powered statute encoding
 - [rules-us](https://github.com/TheAxiomFoundation/rules-us) — US federal rules in RuleSpec

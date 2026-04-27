@@ -84,7 +84,7 @@ rules-us/
 
 When a statute defines a base value but guidance provides an adjusted value:
 
-```rac
+```yaml
 references {
   # From statute encoding
   base_amount: statute/26/63/c/2/basic_amounts

@@ -57,13 +57,13 @@ class R2Storage:
         """Create R2Storage from config file.
 
         Args:
-            config_path: Path to credentials JSON. Defaults to ~/.config/rulesfoundation/r2-credentials.json
+            config_path: Path to credentials JSON. Defaults to ~/.config/axiom-foundation/r2-credentials.json
 
         Returns:
             Configured R2Storage instance
         """
         if config_path is None:
-            config_path = Path.home() / ".config" / "rulesfoundation" / "r2-credentials.json"
+            config_path = Path.home() / ".config" / "axiom-foundation" / "r2-credentials.json"
 
         with open(config_path) as f:
             creds = json.load(f)
@@ -291,6 +291,6 @@ def get_r2_atlas() -> R2Storage:
 
 
 def get_r2_rules_xml() -> R2Storage:
-    """Get R2Storage for rules-xml bucket (converted AKN XML)."""
-    config_path = Path.home() / ".config" / "rulesfoundation" / "r2-rules-xml-credentials.json"
+    """Get R2Storage for rules-xml bucket."""
+    config_path = Path.home() / ".config" / "axiom-foundation" / "r2-rules-xml-credentials.json"
     return R2Storage.from_config(config_path)

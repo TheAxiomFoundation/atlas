@@ -138,7 +138,7 @@ def upload_to_r2() -> None:
     print("\n☁️  Uploading to R2...")
 
     # Load credentials
-    creds_path = Path.home() / ".config/rulesfoundation/r2-credentials.json"
+    creds_path = Path.home() / ".config/axiom-foundation/r2-credentials.json"
     if not creds_path.exists():
         print("  ⚠️  R2 credentials not found. Skipping upload.")
         return

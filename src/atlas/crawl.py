@@ -421,7 +421,7 @@ def get_r2_client():
     import boto3
     from botocore.config import Config
 
-    creds_path = Path.home() / ".config" / "rulesfoundation" / "r2-credentials.json"
+    creds_path = Path.home() / ".config" / "axiom-foundation" / "r2-credentials.json"
     with open(creds_path) as f:
         creds = json.load(f)
 

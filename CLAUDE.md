@@ -19,7 +19,7 @@ This repo is part of The Axiom Foundation (see parent CLAUDE.md). For microdata 
 ### Infrastructure
 
 - **R2 Bucket**: `atlas` (Cloudflare R2)
-- **Credentials**: `~/.config/rulesfoundation/r2-credentials.json`
+- **Credentials**: `~/.config/axiom-foundation/r2-credentials.json`
 - **113k+ documents**, 2GB total
 
 ## Commands
@@ -164,4 +164,4 @@ This repo was moved from CosilicoAI to TheAxiomFoundation in Jan 2026. All refer
 - **GitHub**: `TheAxiomFoundation/atlas`
 - **Local**: `/Users/maxghenis/TheAxiomFoundation/atlas`
 - **R2 Bucket**: `atlas` (migrated from `arch`)
-- **Credentials**: `~/.config/rulesfoundation/r2-credentials.json`
+- **Credentials**: `~/.config/axiom-foundation/r2-credentials.json`
