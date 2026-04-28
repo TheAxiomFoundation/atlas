@@ -399,14 +399,14 @@ class SupabaseIngestor:
 
         Args:
             title_num: Title number (e.g., 26 for IRC)
-            uscode_path: Path to uscode directory (default Axiom repo data/uscode)
+            uscode_path: Path to uscode directory (default Axiom Corpus repo data/uscode)
             batch_size: Number of rules to insert per batch
 
         Returns:
             Total number of rules inserted
         """
         if uscode_path is None:
-            # Default to Axiom repo's data/uscode directory
+            # Default to Axiom Corpus repo's data/uscode directory
             uscode_path = Path(__file__).parent.parent.parent.parent / "data" / "uscode"
 
         xml_path = uscode_path / f"usc{title_num}.xml"

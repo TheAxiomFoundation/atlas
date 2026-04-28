@@ -203,7 +203,7 @@ class GenericStateParser:
             timeout=30,
             follow_redirects=True,
             headers={
-                "User-Agent": "Axiom/1.0 (Legal Archive; contact@axiom-foundation.org) https://github.com/TheAxiomFoundation/axiom"
+                "User-Agent": "Axiom/1.0 (Legal Archive; contact@axiom-foundation.org) https://github.com/TheAxiomFoundation/axiom-corpus"
             },
         )
         self._last_request = 0.0

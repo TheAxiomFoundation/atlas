@@ -301,7 +301,7 @@ def convert_all_titles(source_dir: Path, output_dir: Path) -> dict:
 def main():
     """Main entry point."""
     # Paths
-    source_dir = Path("/Users/maxghenis/TheAxiomFoundation/axiom/data/statutes/us-ri")
+    source_dir = Path("/Users/maxghenis/TheAxiomFoundation/axiom-corpus/data/statutes/us-ri")
     output_dir = Path("/tmp/rules-us-ri-akn")
 
     print("=" * 60)

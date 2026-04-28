@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "axiom"
+name = "axiom-corpus"
 version = "0.1.0"
-description = "Foundational archive for all raw government source files - statutes, IRS guidance, microdata, crosstabs, and parameters"
+description = "Axiom Corpus source services for statutes, regulations, guidance, and related government source files"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
@@ -63,14 +63,14 @@ verify = [
 ]
 
 [project.scripts]
-axiom = "axiom.cli:main"
-axiom-build = "axiom.scripts.build_archive:main"
-axiom-pipeline = "axiom.pipeline.cli:main"
+axiom-corpus = "axiom.cli:main"
+axiom-corpus-build = "axiom.scripts.build_archive:main"
+axiom-corpus-pipeline = "axiom.pipeline.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/TheAxiomFoundation/axiom"
-Documentation = "https://github.com/TheAxiomFoundation/axiom"
-Repository = "https://github.com/TheAxiomFoundation/axiom"
+Homepage = "https://github.com/TheAxiomFoundation/axiom-corpus"
+Documentation = "https://github.com/TheAxiomFoundation/axiom-corpus"
+Repository = "https://github.com/TheAxiomFoundation/axiom-corpus"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -101,7 +101,7 @@ markers = [
 ]
 
 [tool.towncrier]
-name = "axiom"
+name = "axiom-corpus"
 package = "axiom"
 package_dir = "src"
 directory = "changes"

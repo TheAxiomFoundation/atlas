@@ -667,4 +667,4 @@ For states with EITC programs, key statute citations:
 2. **Download California pubinfo archive** and explore structure
 3. **Probe Michigan XML archive** to understand schema
 4. **Build unified scraper interface** supporting multiple backends
-5. **Store in atlas catalog format** per existing conventions
+5. **Store in Axiom Corpus catalog format** per existing conventions

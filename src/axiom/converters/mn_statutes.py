@@ -438,7 +438,7 @@ if __name__ == "__main__":
     import sys
 
     # Default paths
-    input_dir = Path("/Users/maxghenis/TheAxiomFoundation/axiom/data/statutes/us-mn")
+    input_dir = Path("/Users/maxghenis/TheAxiomFoundation/axiom-corpus/data/statutes/us-mn")
     output_dir = Path("/tmp/rules-us-mn-akn")
 
     converter = MNStatutesToAKN()

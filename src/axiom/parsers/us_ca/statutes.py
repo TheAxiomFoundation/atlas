@@ -144,7 +144,7 @@ class CACodeParser:
             timeout=30,
             follow_redirects=True,
             headers={
-                "User-Agent": "Axiom/1.0 (Legal Archive; contact@axiom-foundation.org) https://github.com/TheAxiomFoundation/axiom"
+                "User-Agent": "Axiom/1.0 (Legal Archive; contact@axiom-foundation.org) https://github.com/TheAxiomFoundation/axiom-corpus"
             },
         )
 

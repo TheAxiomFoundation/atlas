@@ -33,8 +33,8 @@ def get(ctx: click.Context, citation: str, as_json: bool):
     """Get a section by citation.
 
     Examples:
-        axiom get "26 USC 32"
-        axiom get "26 USC 32(a)(1)"
+        axiom-corpus get "26 USC 32"
+        axiom-corpus get "26 USC 32(a)(1)"
     """
     archive = AxiomArchive(db_path=ctx.obj["db"])
     section = archive.get(citation)
@@ -67,8 +67,8 @@ def search(ctx: click.Context, query: str, title: int | None, limit: int):
     """Search for sections matching a query.
 
     Examples:
-        axiom search "earned income"
-        axiom search "child tax credit" --title 26
+        axiom-corpus search "earned income"
+        axiom-corpus search "child tax credit" --title 26
     """
     archive = AxiomArchive(db_path=ctx.obj["db"])
     results = archive.search(query, title=title, limit=limit)
@@ -152,7 +152,7 @@ def download(title_num: int, output: Path):
     """Download a US Code title from uscode.house.gov.
 
     Example:
-        axiom download 26 -o data/uscode
+        axiom-corpus download 26 -o data/uscode
     """
     with console.status(f"Downloading Title {title_num}..."):
         path = download_title(title_num, output)
@@ -168,7 +168,7 @@ def serve(ctx: click.Context, host: str, port: int, reload: bool):
     """Start the REST API server.
 
     Example:
-        axiom serve --host 0.0.0.0 --port 8080
+        axiom-corpus serve --host 0.0.0.0 --port 8080
     """
     import uvicorn
 
@@ -359,13 +359,13 @@ def download_state(ctx: click.Context, state: str, law: tuple[str, ...], list_la
     - tx: Texas (bulk ZIP download, no API key needed)
 
     Examples:
-        axiom download-state ny                    # Download TAX and SOS laws
-        axiom download-state ny --law TAX          # Download only Tax Law
-        axiom download-state ny --list-laws        # List available law codes
-        axiom download-state fl                    # Download FL tax chapters
-        axiom download-state fl --law 212          # Download specific chapter
-        axiom download-state tx                    # Download TX priority codes
-        axiom download-state tx --law TX           # Download just Tax Code
+        axiom-corpus download-state ny                    # Download TAX and SOS laws
+        axiom-corpus download-state ny --law TAX          # Download only Tax Law
+        axiom-corpus download-state ny --list-laws        # List available law codes
+        axiom-corpus download-state fl                    # Download FL tax chapters
+        axiom-corpus download-state fl --law 212          # Download specific chapter
+        axiom-corpus download-state tx                    # Download TX priority codes
+        axiom-corpus download-state tx --law TX           # Download just Tax Code
     """
     if state.lower() == "ny":
         _download_ny_state(ctx, law, list_laws)
@@ -786,8 +786,8 @@ def stats(ctx: click.Context, as_json: bool):
     - Database size and storage info
 
     Example:
-        axiom stats
-        axiom stats --json
+        axiom-corpus stats
+        axiom-corpus stats --json
     """
     import json as json_module
     from datetime import date
@@ -1075,7 +1075,7 @@ def crawl(
     elif jurisdiction == "us":
         # Federal only - handled separately via USLM
         console.print("[cyan]Federal US Code uses USLM parser, not web crawl.[/cyan]")
-        console.print("Use: [bold]axiom download <title>[/bold] for federal titles")
+        console.print("Use: [bold]axiom-corpus download <title>[/bold] for federal titles")
         return
     else:
         jurisdictions = [jurisdiction]
@@ -1210,9 +1210,9 @@ def download_cfr(title_num: int, output: Path, force: bool):
     Downloads the eCFR XML file for the specified CFR title number.
 
     Examples:
-        axiom download-cfr 26              # Title 26 (Treasury/IRS)
-        axiom download-cfr 7               # Title 7 (Agriculture/SNAP)
-        axiom download-cfr 26 -o data/cfr  # Custom output directory
+        axiom-corpus download-cfr 26              # Title 26 (Treasury/IRS)
+        axiom-corpus download-cfr 7               # Title 7 (Agriculture/SNAP)
+        axiom-corpus download-cfr 26 -o data/cfr  # Custom output directory
     """
     import asyncio
 
@@ -1320,9 +1320,9 @@ def get_cfr(ctx: click.Context, citation: str, as_json: bool):
     """Get a CFR regulation by citation.
 
     Examples:
-        axiom get-cfr "26 CFR 1.32-1"
-        axiom get-cfr "26 CFR 1.32-1(a)"
-        axiom get-cfr "7 CFR 273.1" --json
+        axiom-corpus get-cfr "26 CFR 1.32-1"
+        axiom-corpus get-cfr "26 CFR 1.32-1(a)"
+        axiom-corpus get-cfr "7 CFR 273.1" --json
     """
     from axiom.models_regulation import CFRCitation
     from axiom.storage.regulation import RegulationStorage
@@ -1376,9 +1376,9 @@ def search_cfr(ctx: click.Context, query: str, title: int | None, limit: int):
     """Search CFR regulations.
 
     Examples:
-        axiom search-cfr "earned income"
-        axiom search-cfr "food stamps" --title 7
-        axiom search-cfr "withholding" -t 26 -n 20
+        axiom-corpus search-cfr "earned income"
+        axiom-corpus search-cfr "food stamps" --title 7
+        axiom-corpus search-cfr "withholding" -t 26 -n 20
     """
     from axiom.storage.regulation import RegulationStorage
 
@@ -1443,12 +1443,12 @@ def download_uk(
       --list-acts List all available acts without downloading
 
     Examples:
-        axiom download-uk ukpga/2003/1              # Single act (ITEPA 2003)
-        axiom download-uk ukpga/2007/3 -n 50        # ITA 2007, first 50 sections
-        axiom download-uk --priority               # Download priority acts
-        axiom download-uk --all                    # Download ALL ukpga acts
-        axiom download-uk --all --resume           # Resume interrupted download
-        axiom download-uk --list-acts              # List all available acts
+        axiom-corpus download-uk ukpga/2003/1              # Single act (ITEPA 2003)
+        axiom-corpus download-uk ukpga/2007/3 -n 50        # ITA 2007, first 50 sections
+        axiom-corpus download-uk --priority               # Download priority acts
+        axiom-corpus download-uk --all                    # Download ALL ukpga acts
+        axiom-corpus download-uk --all --resume           # Resume interrupted download
+        axiom-corpus download-uk --list-acts              # List all available acts
     """
     import asyncio
     from datetime import datetime
@@ -1621,9 +1621,9 @@ def download_uk(
             "[red]Error:[/red] CITATION required unless using --all, --priority, or --list-acts"
         )
         console.print("\nExamples:")
-        console.print("  axiom download-uk ukpga/2003/1")
-        console.print("  axiom download-uk --all")
-        console.print("  axiom download-uk --priority")
+        console.print("  axiom-corpus download-uk ukpga/2003/1")
+        console.print("  axiom-corpus download-uk --all")
+        console.print("  axiom-corpus download-uk --priority")
         raise SystemExit(1)
 
     # Parse citation
@@ -1852,9 +1852,9 @@ def get_uk(citation: str, as_json: bool):
     Fetches from legislation.gov.uk and displays.
 
     Examples:
-        axiom get-uk "ukpga/2003/1/section/62"
-        axiom get-uk "ITEPA 2003 s.62"
-        axiom get-uk "ukpga/2007/3/section/1" --json
+        axiom-corpus get-uk "ukpga/2003/1/section/62"
+        axiom-corpus get-uk "ITEPA 2003 s.62"
+        axiom-corpus get-uk "ukpga/2007/3/section/1" --json
     """
     import asyncio
 

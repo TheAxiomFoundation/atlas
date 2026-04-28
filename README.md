@@ -1,8 +1,8 @@
-# Axiom Source Archive
+# Axiom Corpus
 
 **Comprehensive map of government legal sources.**
 
-Axiom is the unified source of truth for statutes, regulations, and IRS guidance that powers The Axiom Foundation ecosystem.
+Axiom Corpus is the unified source of truth for statutes, regulations, guidance, and related source documents that power the Axiom ecosystem.
 
 ## Features
 
@@ -21,28 +21,28 @@ Axiom is the unified source of truth for statutes, regulations, and IRS guidance
 pip install -e .
 
 # Run the API server
-axiom serve
+axiom-corpus serve
 
 # Or use the CLI
-axiom get "26 USC 32"        # Get IRC § 32 (EITC)
-axiom search "earned income" # Search across documents
+axiom-corpus get "26 USC 32"        # Get IRC § 32 (EITC)
+axiom-corpus search "earned income" # Search across documents
 ```
 
 ## CLI Usage
 
 ```bash
 # Download sources
-axiom download 26                    # Download Title 26 (IRC) from uscode.gov
-axiom download-state ny              # Download NY state laws
-axiom irs-guidance --year 2024       # Fetch IRS guidance for 2024
+axiom-corpus download 26                    # Download Title 26 (IRC) from uscode.gov
+axiom-corpus download-state ny              # Download NY state laws
+axiom-corpus irs-guidance --year 2024       # Fetch IRS guidance for 2024
 
 # Query
-axiom get "26 USC 32"                # Get specific section
-axiom search "child tax credit"      # Full-text search
-axiom stats                          # Show database stats
+axiom-corpus get "26 USC 32"                # Get specific section
+axiom-corpus search "child tax credit"      # Full-text search
+axiom-corpus stats                          # Show database stats
 
 # API
-axiom serve                          # Start REST API at localhost:8000
+axiom-corpus serve                          # Start REST API at localhost:8000
 ```
 
 ## Python API
@@ -102,7 +102,7 @@ curl "http://localhost:8000/v1/sections/26/32?as_of=2020-01-01"
 ## Architecture
 
 ```
-axiom/
+axiom-corpus/
 ├── src/axiom/
 │   ├── __init__.py
 │   ├── archive.py        # Main Axiom archive class
@@ -143,15 +143,15 @@ Axiom uses SQLite + FTS5 for local development. For production deployments:
 ```bash
 # Build and run
 pip install -e .
-axiom serve
+axiom-corpus serve
 ```
 
 ### Docker
 
 ```bash
 # Build and run
-docker build -t axiom .
-docker run -p 8000:8000 -v $(pwd)/axiom.db:/app/axiom.db axiom
+docker build -t axiom-corpus .
+docker run -p 8000:8000 -v $(pwd)/axiom.db:/app/axiom.db axiom-corpus
 ```
 
 ## License

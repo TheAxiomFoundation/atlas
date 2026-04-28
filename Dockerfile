@@ -1,6 +1,6 @@
-# Dockerfile for Atlas REST API
-# Build: docker build -t axiom-atlas .
-# Run:   docker run -p 8000:8000 -v $(pwd)/atlas.db:/app/atlas.db axiom-atlas
+# Dockerfile for Axiom Corpus REST API
+# Build: docker build -t axiom-corpus .
+# Run:   docker run -p 8000:8000 -v $(pwd)/axiom.db:/app/axiom.db axiom-corpus
 
 FROM python:3.14-slim
 
@@ -35,4 +35,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/')" || exit 1
 
 # Run the API
-CMD ["uvicorn", "atlas.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "axiom.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

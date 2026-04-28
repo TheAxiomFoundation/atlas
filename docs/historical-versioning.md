@@ -15,23 +15,23 @@ Last updated: 2026-04-16.
 subsystem:
 
 - **Accepted**
-  - `atlas.archive.Atlas.get(citation, as_of=...)`
-  - `atlas.storage.base.StorageBackend.get_section(..., as_of=...)`
-  - REST endpoints under `src/atlas/api/main.py`
+  - `axiom.archive.AxiomArchive.get(citation, as_of=...)`
+  - `axiom.storage.base.StorageBackend.get_section(..., as_of=...)`
+  - REST endpoints under `src/axiom/api/main.py`
     (`/v1/sections/...`, search) accept `as_of` as a query parameter.
 - **Honored (point-in-time retrieval works)**
-  - **eCFR regulations** — `atlas.converters.ecfr.ECFRConverter` passes
+  - **eCFR regulations** — `axiom.converters.ecfr.ECFRConverter` passes
     `as_of` through to the eCFR API, which natively serves historical
     snapshots. Calls like `fetch("26/1.32", as_of=date(2020, 1, 1))`
     return the CFR text that was in effect on that date.
 - **Silently ignored (parameter accepted, current version returned)**
-  - **SQLite storage backend** — `src/atlas/storage/sqlite.py`
+  - **SQLite storage backend** — `src/axiom/storage/sqlite.py`
     `get_section()` has a `# TODO: Implement historical versions
     (as_of parameter)` comment and queries the `sections` table without
     any date predicate. Any call path that goes through
-    `atlas get "26 USC 32" --as-of 2020-01-01` therefore returns the
+    `axiom-corpus get "26 USC 32" --as-of 2020-01-01` therefore returns the
     **currently ingested** section, regardless of the date supplied.
-  - **Postgres storage backend** — `src/atlas/storage/postgres.py`
+  - **Postgres storage backend** — `src/axiom/storage/postgres.py`
     accepts `as_of` but has no version table and likewise returns the
     current row.
   - **US Code, state statutes, IRS guidance, UK/Canada statutes** — no
@@ -48,8 +48,8 @@ In short: **`as_of` works for eCFR and is a no-op for everything else.**
 2. **No amendment-aware ingest.** Parsers (`parsers/uslm.py`, state
    parsers, CLML/LIMS) extract the text as of the XML they were given
    and discard prior versions.
-3. **No snapshot archive.** Atlas does not retain USLM/CLML XML from
-   prior downloads. The R2 `atlas` bucket stores the most recent crawl
+3. **No snapshot archive.** Axiom Corpus does not retain USLM/CLML XML from
+   prior downloads. The corpus R2 bucket stores the most recent crawl
    only (R2 versioning is not enabled on source prefixes).
 4. **No test coverage.** There are no tests that exercise `as_of` on the
    SQLite backend or the API layer.
@@ -72,7 +72,7 @@ A minimum viable implementation, roughly in order:
    `PostgresStorage.get_section` to filter
    `valid_from <= as_of AND (valid_to IS NULL OR as_of < valid_to)`.
 4. **Source snapshots**: preserve each upstream download as a dated
-   artifact in R2 (`atlas/<jurisdiction>/<date>/...`) so versions can be
+   artifact in R2 (`corpus/<jurisdiction>/<date>/...`) so versions can be
    reconstructed if the DB is lost.
 5. **Public law provenance**: for federal statutes, link amendments to
    their enacting public law numbers (already parsed into
@@ -87,8 +87,8 @@ current text.
 
 ## References
 
-- `src/atlas/storage/sqlite.py:230` — the `TODO` noting `as_of` is
+- `src/axiom/storage/sqlite.py:230` — the `TODO` noting `as_of` is
   unimplemented.
-- `src/atlas/converters/ecfr.py` — working `as_of` implementation via
+- `src/axiom/converters/ecfr.py` — working `as_of` implementation via
   eCFR API.
 - README section on historical queries.

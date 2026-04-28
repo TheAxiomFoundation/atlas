@@ -22,7 +22,7 @@ from bs4 import BeautifulSoup
 AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 
 # Source and output directories
-SOURCE_DIR = Path("/Users/maxghenis/TheAxiomFoundation/axiom/data/statutes/us-me")
+SOURCE_DIR = Path("/Users/maxghenis/TheAxiomFoundation/axiom-corpus/data/statutes/us-me")
 OUTPUT_DIR = Path("/tmp/rules-us-me-akn")
 
 

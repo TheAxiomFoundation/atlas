@@ -21,7 +21,7 @@ from xml.etree import ElementTree as ET
 AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 
 # Source and output directories
-SOURCE_DIR = Path("/Users/maxghenis/TheAxiomFoundation/axiom/data/michigan")
+SOURCE_DIR = Path("/Users/maxghenis/TheAxiomFoundation/axiom-corpus/data/michigan")
 OUTPUT_DIR = Path("/tmp/rules-us-mi-akn")
 
 

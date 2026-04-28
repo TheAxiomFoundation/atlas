@@ -198,7 +198,7 @@ class CAStateConverter:
             timeout=30,
             follow_redirects=True,
             headers={
-                "User-Agent": "Axiom/1.0 (https://github.com/TheAxiomFoundation/axiom; contact@axiom-foundation.org)"
+                "User-Agent": "Axiom/1.0 (https://github.com/TheAxiomFoundation/axiom-corpus; contact@axiom-foundation.org)"
             },
         ) as client:
             response = client.get(url)

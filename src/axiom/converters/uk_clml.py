@@ -157,7 +157,7 @@ class UKCLMLConverter:
             response = await client.get(  # pragma: no cover
                 url,
                 headers={
-                    "User-Agent": "Axiom/1.0 (https://github.com/TheAxiomFoundation/axiom; contact@axiom-foundation.org)"
+                    "User-Agent": "Axiom/1.0 (https://github.com/TheAxiomFoundation/axiom-corpus; contact@axiom-foundation.org)"
                 },
                 follow_redirects=True,
                 timeout=60,

@@ -3,7 +3,7 @@
 
 import sys
 
-sys.path.insert(0, "/Users/maxghenis/TheAxiomFoundation/axiom/src")
+sys.path.insert(0, "/Users/maxghenis/TheAxiomFoundation/axiom-corpus/src")
 
 from axiom.ingest.supabase import SupabaseIngestor
 

@@ -37,7 +37,7 @@ arch/
 ## R2 Bucket Structure
 
 ```
-atlas (R2 bucket)/
+axiom-corpus (R2 bucket)/
 ├── sources/
 │   ├── statutes/
 │   │   └── us/
