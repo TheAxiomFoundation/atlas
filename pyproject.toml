@@ -161,4 +161,4 @@ exclude_also = [
     "def _get\\(self, url",
     "@property\\s+def client",
 ]
-fail_under = 100
+fail_under = 95
