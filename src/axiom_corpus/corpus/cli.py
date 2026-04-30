@@ -1,0 +1,822 @@
+"""CLI for the source-first corpus pipeline."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from datetime import date
+from pathlib import Path
+
+from axiom_corpus.corpus.analytics import (
+    build_analytics_report,
+    load_provision_count_snapshot,
+)
+from axiom_corpus.corpus.artifacts import CorpusArtifactStore, sha256_bytes
+from axiom_corpus.corpus.colorado import extract_colorado_ccr
+from axiom_corpus.corpus.coverage import compare_provision_coverage
+from axiom_corpus.corpus.ecfr import build_ecfr_inventory, ecfr_run_id, extract_ecfr
+from axiom_corpus.corpus.io import load_provisions, load_source_inventory
+from axiom_corpus.corpus.models import CorpusManifest, DocumentClass, ProvisionRecord
+from axiom_corpus.corpus.states import (
+    extract_cic_html_release,
+    extract_cic_odt_release,
+    extract_colorado_docx_release,
+    extract_dc_code,
+)
+from axiom_corpus.corpus.supabase import (
+    DEFAULT_ACCESS_TOKEN_ENV,
+    DEFAULT_AXIOM_SUPABASE_URL,
+    DEFAULT_SERVICE_KEY_ENV,
+    delete_supabase_provisions_scope,
+    load_provisions_to_supabase,
+    resolve_service_key,
+    write_supabase_rows_jsonl,
+)
+from axiom_corpus.corpus.usc import (
+    build_usc_inventory_from_xml,
+    decode_uslm_bytes,
+    extract_usc,
+    extract_usc_directory,
+    infer_uslm_title,
+    usc_run_id,
+)
+
+
+def _cmd_validate_manifest(args: argparse.Namespace) -> int:
+    manifest = CorpusManifest.load(args.path)
+    manifest.require_unique_sources()
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "version": manifest.version,
+                "sources": len(manifest.sources),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _cmd_inventory_ecfr(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    run_id = ecfr_run_id(args.version, args.only_title, args.only_part, args.limit)
+    inventory = build_ecfr_inventory(
+        as_of=args.as_of,
+        only_title=args.only_title,
+        only_part=args.only_part,
+        limit=args.limit,
+        run_id=run_id,
+    )
+    out = store.inventory_path("us", DocumentClass.REGULATION, run_id)
+    store.write_inventory(out, inventory.items)
+    print(
+        json.dumps(
+            {
+                "jurisdiction": "us",
+                "document_class": DocumentClass.REGULATION.value,
+                "version": args.version,
+                "run_id": run_id,
+                "as_of": args.as_of,
+                "title_count": inventory.title_count,
+                "part_count": inventory.part_count,
+                "items_written": len(inventory.items),
+                "unique_citation_count": inventory.unique_citation_count,
+                "written_to": str(out),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _cmd_inventory_usc(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    source_bytes = args.source_xml.read_bytes()
+    xml_content = decode_uslm_bytes(source_bytes)
+    title = args.title or infer_uslm_title(xml_content)
+    run_id = usc_run_id(args.version, title, args.limit)
+    inventory = build_usc_inventory_from_xml(
+        xml_content,
+        title=title,
+        run_id=run_id,
+        source_sha256=sha256_bytes(source_bytes),
+        source_download_url=args.source_url,
+        limit=args.limit,
+    )
+    out = store.inventory_path("us", DocumentClass.STATUTE, run_id)
+    store.write_inventory(out, inventory.items)
+    print(
+        json.dumps(
+            {
+                "jurisdiction": "us",
+                "document_class": DocumentClass.STATUTE.value,
+                "version": args.version,
+                "run_id": run_id,
+                "title": title,
+                "section_count": inventory.section_count,
+                "items_written": len(inventory.items),
+                "unique_citation_count": inventory.unique_citation_count,
+                "written_to": str(out),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _cmd_export_supabase(args: argparse.Namespace) -> int:
+    records = load_provisions(args.provisions)
+    rows_written = write_supabase_rows_jsonl(args.output, records)
+    print(
+        json.dumps(
+            {
+                "rows_written": rows_written,
+                "provisions": str(args.provisions),
+                "output": str(args.output),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _cmd_load_supabase(args: argparse.Namespace) -> int:
+    records = load_provisions(args.provisions)
+    service_key = ""
+    if not args.dry_run:
+        service_key = resolve_service_key(
+            args.supabase_url,
+            service_key_env=args.service_key_env,
+            access_token_env=args.access_token_env,
+        )
+    replace_report = None
+    if args.replace_scope:
+        jurisdiction, document_class = _single_provision_scope(records)
+        replace_report = delete_supabase_provisions_scope(
+            jurisdiction=jurisdiction,
+            document_class=document_class,
+            service_key=service_key,
+            supabase_url=args.supabase_url,
+            dry_run=args.dry_run,
+            progress_stream=sys.stderr,
+        )
+    report = load_provisions_to_supabase(
+        records,
+        service_key=service_key,
+        supabase_url=args.supabase_url,
+        chunk_size=args.chunk_size,
+        refresh=not args.skip_refresh,
+        dry_run=args.dry_run,
+        allow_refresh_failure=args.allow_refresh_failure,
+        preserve_existing_ids=args.preserve_existing_ids and not args.replace_scope,
+        progress_stream=sys.stderr,
+    )
+    payload = report.to_mapping()
+    if replace_report is not None:
+        payload["replace_scope"] = replace_report.to_mapping()
+    payload["provisions"] = str(args.provisions)
+    payload["supabase_url"] = args.supabase_url
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _single_provision_scope(records: tuple[ProvisionRecord, ...]) -> tuple[str, str]:
+    jurisdictions = {record.jurisdiction for record in records}
+    document_classes = {record.document_class for record in records}
+    if len(jurisdictions) != 1 or len(document_classes) != 1:
+        raise ValueError("replace-scope requires one jurisdiction and one document class")
+    return str(next(iter(jurisdictions))), str(next(iter(document_classes)))
+
+
+def _cmd_extract_ecfr(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date or args.as_of)
+    report = extract_ecfr(
+        store,
+        version=args.version,
+        as_of=args.as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        only_part=args.only_part,
+        limit=args.limit,
+        workers=args.workers,
+        progress_stream=sys.stderr,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": "us",
+                "document_class": DocumentClass.REGULATION.value,
+                "version": args.version,
+                "as_of": args.as_of,
+                "title_count": report.title_count,
+                "part_count": report.part_count,
+                "title_error_count": report.title_error_count,
+                "title_errors": list(report.title_errors[:20]),
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_extract_usc(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_usc(
+        store,
+        version=args.version,
+        source_xml=args.source_xml,
+        title=args.title,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        source_download_url=args.source_url,
+        limit=args.limit,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": "us",
+                "document_class": DocumentClass.STATUTE.value,
+                "version": args.version,
+                "title": report.title,
+                "title_count": report.title_count,
+                "section_count": report.section_count,
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_extract_usc_dir(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_usc_directory(
+        store,
+        version=args.version,
+        source_dir=args.source_dir,
+        only_title=args.only_title,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        source_download_url=args.source_url,
+        limit=args.limit,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": "us",
+                "document_class": DocumentClass.STATUTE.value,
+                "version": args.version,
+                "run_title": report.title,
+                "title_count": report.title_count,
+                "section_count": report.section_count,
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_extract_dc_code(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_dc_code(
+        store,
+        version=args.version,
+        source_dir=args.source_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        limit=args.limit,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": report.jurisdiction,
+                "document_class": DocumentClass.STATUTE.value,
+                "version": args.version,
+                "title_count": report.title_count,
+                "container_count": report.container_count,
+                "section_count": report.section_count,
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_extract_cic_html(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_cic_html_release(
+        store,
+        jurisdiction=args.jurisdiction,
+        version=args.version,
+        release_dir=args.release_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        limit=args.limit,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": report.jurisdiction,
+                "document_class": DocumentClass.STATUTE.value,
+                "version": args.version,
+                "title_count": report.title_count,
+                "container_count": report.container_count,
+                "section_count": report.section_count,
+                "skipped_source_count": report.skipped_source_count,
+                "error_count": len(report.errors),
+                "errors": list(report.errors[:20]),
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_extract_cic_odt(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_cic_odt_release(
+        store,
+        jurisdiction=args.jurisdiction,
+        version=args.version,
+        release_dir=args.release_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        limit=args.limit,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": report.jurisdiction,
+                "document_class": DocumentClass.STATUTE.value,
+                "version": args.version,
+                "title_count": report.title_count,
+                "container_count": report.container_count,
+                "section_count": report.section_count,
+                "skipped_source_count": report.skipped_source_count,
+                "error_count": len(report.errors),
+                "errors": list(report.errors[:20]),
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_extract_colorado_docx(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_colorado_docx_release(
+        store,
+        version=args.version,
+        release_dir=args.release_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        limit=args.limit,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": report.jurisdiction,
+                "document_class": DocumentClass.STATUTE.value,
+                "version": args.version,
+                "title_count": report.title_count,
+                "container_count": report.container_count,
+                "section_count": report.section_count,
+                "skipped_source_count": report.skipped_source_count,
+                "error_count": len(report.errors),
+                "errors": list(report.errors[:20]),
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_extract_colorado_ccr(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_colorado_ccr(
+        store,
+        version=args.version,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_series=args.only_series,
+        limit=args.limit,
+        workers=args.workers,
+        release_dir=args.release_dir,
+        download_dir=args.download_dir,
+        progress_stream=sys.stderr,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": report.jurisdiction,
+                "document_class": report.document_class,
+                "version": args.version,
+                "document_count": report.document_count,
+                "section_count": report.section_count,
+                "skipped_source_count": report.skipped_source_count,
+                "error_count": len(report.errors),
+                "errors": list(report.errors[:20]),
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_coverage(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    source_inventory = load_source_inventory(args.source_inventory)
+    provisions = load_provisions(args.provisions)
+    report = compare_provision_coverage(
+        source_inventory,
+        provisions,
+        jurisdiction=args.jurisdiction,
+        document_class=args.document_class,
+        version=args.version,
+    )
+    payload = report.to_mapping()
+    if args.write:
+        out = store.coverage_path(args.jurisdiction, args.document_class, args.version)
+        store.write_json(out, payload)
+        payload["written_to"] = str(out)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0 if report.complete or args.allow_incomplete else 2
+
+
+def _cmd_analytics(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    report = build_analytics_report(
+        store,
+        version=args.version,
+        provision_counts=load_provision_count_snapshot(
+            args.supabase_counts,
+            legacy_document_class=args.legacy_count_document_class,
+        ),
+        jurisdictions=tuple(args.jurisdiction),
+        document_classes=tuple(args.document_class),
+    )
+    payload = report.to_mapping()
+    if args.write or args.output:
+        out = args.output or (store.root / "analytics" / f"{args.version}.json")
+        store.write_json(out, payload)
+        payload["written_to"] = str(out)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Source-first corpus pipeline tools.")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    validate = sub.add_parser("validate-manifest", help="Validate a corpus manifest.")
+    validate.add_argument("path", type=Path)
+    validate.set_defaults(func=_cmd_validate_manifest)
+
+    inventory_ecfr = sub.add_parser(
+        "inventory-ecfr",
+        help="Build a source inventory from eCFR structure JSON.",
+    )
+    inventory_ecfr.add_argument("--base", type=Path, required=True)
+    inventory_ecfr.add_argument("--version", "--run-id", dest="version", required=True)
+    inventory_ecfr.add_argument("--as-of", required=True)
+    inventory_ecfr.add_argument("--only-title", type=int)
+    inventory_ecfr.add_argument("--only-part")
+    inventory_ecfr.add_argument("--limit", type=int)
+    inventory_ecfr.set_defaults(func=_cmd_inventory_ecfr)
+
+    inventory_usc = sub.add_parser(
+        "inventory-usc",
+        help="Build a source inventory from official USLM XML for one US Code title.",
+    )
+    inventory_usc.add_argument("--base", type=Path, required=True)
+    inventory_usc.add_argument("--version", "--run-id", dest="version", required=True)
+    inventory_usc.add_argument("--source-xml", type=Path, required=True)
+    inventory_usc.add_argument("--title")
+    inventory_usc.add_argument("--source-url")
+    inventory_usc.add_argument("--limit", type=int)
+    inventory_usc.set_defaults(func=_cmd_inventory_usc)
+
+    extract_ecfr_cmd = sub.add_parser(
+        "extract-ecfr",
+        help="Snapshot eCFR source XML and extract normalized provision JSONL.",
+    )
+    extract_ecfr_cmd.add_argument("--base", type=Path, required=True)
+    extract_ecfr_cmd.add_argument("--version", required=True)
+    extract_ecfr_cmd.add_argument("--as-of", required=True)
+    extract_ecfr_cmd.add_argument("--expression-date")
+    extract_ecfr_cmd.add_argument("--only-title", type=int)
+    extract_ecfr_cmd.add_argument("--only-part")
+    extract_ecfr_cmd.add_argument("--limit", type=int)
+    extract_ecfr_cmd.add_argument("--workers", type=int, default=2)
+    extract_ecfr_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_ecfr_cmd.set_defaults(func=_cmd_extract_ecfr)
+
+    extract_usc_cmd = sub.add_parser(
+        "extract-usc",
+        help="Snapshot USLM XML and extract normalized US Code provision JSONL.",
+    )
+    extract_usc_cmd.add_argument("--base", type=Path, required=True)
+    extract_usc_cmd.add_argument("--version", required=True)
+    extract_usc_cmd.add_argument("--source-xml", type=Path, required=True)
+    extract_usc_cmd.add_argument("--title")
+    extract_usc_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_usc_cmd.add_argument("--expression-date")
+    extract_usc_cmd.add_argument("--source-url")
+    extract_usc_cmd.add_argument("--limit", type=int)
+    extract_usc_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_usc_cmd.set_defaults(func=_cmd_extract_usc)
+
+    extract_usc_dir_cmd = sub.add_parser(
+        "extract-usc-dir",
+        help="Snapshot a directory of USLM XML files and extract combined US Code provision JSONL.",
+    )
+    extract_usc_dir_cmd.add_argument("--base", type=Path, required=True)
+    extract_usc_dir_cmd.add_argument("--version", required=True)
+    extract_usc_dir_cmd.add_argument("--source-dir", type=Path, required=True)
+    extract_usc_dir_cmd.add_argument("--only-title")
+    extract_usc_dir_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_usc_dir_cmd.add_argument("--expression-date")
+    extract_usc_dir_cmd.add_argument("--source-url")
+    extract_usc_dir_cmd.add_argument("--limit", type=int)
+    extract_usc_dir_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_usc_dir_cmd.set_defaults(func=_cmd_extract_usc_dir)
+
+    extract_dc_cmd = sub.add_parser(
+        "extract-dc-code",
+        help="Snapshot local DC Code XML and extract normalized provision JSONL.",
+    )
+    extract_dc_cmd.add_argument("--base", type=Path, required=True)
+    extract_dc_cmd.add_argument("--version", required=True)
+    extract_dc_cmd.add_argument("--source-dir", type=Path, required=True)
+    extract_dc_cmd.add_argument("--only-title")
+    extract_dc_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_dc_cmd.add_argument("--expression-date")
+    extract_dc_cmd.add_argument("--limit", type=int)
+    extract_dc_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_dc_cmd.set_defaults(func=_cmd_extract_dc_code)
+
+    extract_cic_html_cmd = sub.add_parser(
+        "extract-cic-state-html",
+        help="Snapshot a Public.Resource.org CIC state-code HTML release.",
+    )
+    extract_cic_html_cmd.add_argument("--base", type=Path, required=True)
+    extract_cic_html_cmd.add_argument("--version", required=True)
+    extract_cic_html_cmd.add_argument("--jurisdiction", required=True)
+    extract_cic_html_cmd.add_argument("--release-dir", type=Path, required=True)
+    extract_cic_html_cmd.add_argument("--only-title")
+    extract_cic_html_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_cic_html_cmd.add_argument("--expression-date")
+    extract_cic_html_cmd.add_argument("--limit", type=int)
+    extract_cic_html_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_cic_html_cmd.set_defaults(func=_cmd_extract_cic_html)
+
+    extract_cic_odt_cmd = sub.add_parser(
+        "extract-cic-state-odt",
+        help="Snapshot a Public.Resource.org CIC state-code ODT release.",
+    )
+    extract_cic_odt_cmd.add_argument("--base", type=Path, required=True)
+    extract_cic_odt_cmd.add_argument("--version", required=True)
+    extract_cic_odt_cmd.add_argument("--jurisdiction", required=True)
+    extract_cic_odt_cmd.add_argument("--release-dir", type=Path, required=True)
+    extract_cic_odt_cmd.add_argument("--only-title")
+    extract_cic_odt_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_cic_odt_cmd.add_argument("--expression-date")
+    extract_cic_odt_cmd.add_argument("--limit", type=int)
+    extract_cic_odt_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_cic_odt_cmd.set_defaults(func=_cmd_extract_cic_odt)
+
+    extract_colorado_docx_cmd = sub.add_parser(
+        "extract-colorado-docx",
+        help="Snapshot the official Colorado CRS DOCX release.",
+    )
+    extract_colorado_docx_cmd.add_argument("--base", type=Path, required=True)
+    extract_colorado_docx_cmd.add_argument("--version", required=True)
+    extract_colorado_docx_cmd.add_argument("--release-dir", type=Path, required=True)
+    extract_colorado_docx_cmd.add_argument("--only-title")
+    extract_colorado_docx_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_colorado_docx_cmd.add_argument("--expression-date")
+    extract_colorado_docx_cmd.add_argument("--limit", type=int)
+    extract_colorado_docx_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_colorado_docx_cmd.set_defaults(func=_cmd_extract_colorado_docx)
+
+    extract_colorado_ccr_cmd = sub.add_parser(
+        "extract-colorado-ccr",
+        help="Snapshot current Colorado Code of Regulations PDFs.",
+    )
+    extract_colorado_ccr_cmd.add_argument("--base", type=Path, required=True)
+    extract_colorado_ccr_cmd.add_argument("--version", required=True)
+    extract_colorado_ccr_cmd.add_argument("--only-series")
+    extract_colorado_ccr_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_colorado_ccr_cmd.add_argument("--expression-date")
+    extract_colorado_ccr_cmd.add_argument("--limit", type=int)
+    extract_colorado_ccr_cmd.add_argument("--workers", type=int, default=4)
+    extract_colorado_ccr_cmd.add_argument("--release-dir", type=Path)
+    extract_colorado_ccr_cmd.add_argument("--download-dir", type=Path)
+    extract_colorado_ccr_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_colorado_ccr_cmd.set_defaults(func=_cmd_extract_colorado_ccr)
+
+    coverage = sub.add_parser(
+        "coverage",
+        help="Compare source inventory with normalized provision records.",
+    )
+    coverage.add_argument("--base", type=Path, required=True)
+    coverage.add_argument("--source-inventory", type=Path, required=True)
+    coverage.add_argument("--provisions", type=Path, required=True)
+    coverage.add_argument("--jurisdiction", required=True)
+    coverage.add_argument(
+        "--document-class",
+        choices=[document_class.value for document_class in DocumentClass],
+        default=DocumentClass.STATUTE.value,
+    )
+    coverage.add_argument("--version", required=True)
+    coverage.add_argument("--write", action="store_true")
+    coverage.add_argument("--allow-incomplete", action="store_true")
+    coverage.set_defaults(func=_cmd_coverage)
+
+    export_supabase = sub.add_parser(
+        "export-supabase",
+        help="Project normalized provision JSONL into corpus.provisions JSONL.",
+    )
+    export_supabase.add_argument("--provisions", type=Path, required=True)
+    export_supabase.add_argument("--output", type=Path, required=True)
+    export_supabase.set_defaults(func=_cmd_export_supabase)
+
+    load_supabase = sub.add_parser(
+        "load-supabase",
+        help="Upsert normalized provision JSONL into corpus.provisions.",
+    )
+    load_supabase.add_argument("--provisions", type=Path, required=True)
+    load_supabase.add_argument(
+        "--supabase-url",
+        default=os.environ.get("AXIOM_SUPABASE_URL", DEFAULT_AXIOM_SUPABASE_URL),
+    )
+    load_supabase.add_argument("--chunk-size", type=int, default=500)
+    load_supabase.add_argument("--dry-run", action="store_true")
+    load_supabase.add_argument("--skip-refresh", action="store_true")
+    load_supabase.add_argument("--allow-refresh-failure", action="store_true")
+    load_supabase.add_argument(
+        "--replace-scope",
+        action="store_true",
+        help=(
+            "Delete existing rows for the JSONL's single jurisdiction/document class "
+            "before loading."
+        ),
+    )
+    load_supabase.add_argument(
+        "--preserve-existing-ids",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Reuse existing corpus.provisions IDs for matching citation paths before upsert.",
+    )
+    load_supabase.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
+    load_supabase.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
+    load_supabase.set_defaults(func=_cmd_load_supabase)
+
+    analytics = sub.add_parser(
+        "analytics",
+        help="Summarize source, provision, and Supabase count coverage.",
+    )
+    analytics.add_argument("--base", type=Path, required=True)
+    analytics.add_argument("--version", required=True)
+    analytics.add_argument("--supabase-counts", type=Path)
+    analytics.add_argument("--jurisdiction", action="append", default=[])
+    analytics.add_argument(
+        "--document-class",
+        action="append",
+        choices=[document_class.value for document_class in DocumentClass],
+        default=[],
+    )
+    analytics.add_argument(
+        "--legacy-count-document-class",
+        default=DocumentClass.STATUTE.value,
+        choices=[document_class.value for document_class in DocumentClass],
+    )
+    analytics.add_argument("--output", type=Path)
+    analytics.add_argument("--write", action="store_true")
+    analytics.set_defaults(func=_cmd_analytics)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

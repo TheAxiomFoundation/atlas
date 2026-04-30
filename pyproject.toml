@@ -63,9 +63,9 @@ verify = [
 ]
 
 [project.scripts]
-axiom-corpus = "axiom_corpus.cli:main"
+axiom-corpus = "axiom_corpus.corpus.cli:main"
 axiom-corpus-build = "axiom_corpus.scripts.build_archive:main"
-axiom-corpus-pipeline = "axiom_corpus.pipeline.cli:main"
+axiom-corpus-ingest = "axiom_corpus.corpus.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/TheAxiomFoundation/axiom-corpus"

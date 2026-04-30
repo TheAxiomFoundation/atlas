@@ -1,0 +1,35 @@
+version: "2026-04-29"
+sources:
+  - source_id: us-ecfr
+    jurisdiction: us
+    document_class: regulation
+    adapter: ecfr
+    source_url: https://www.ecfr.gov/
+    version: "2024-04-16"
+    metadata:
+      source_authority: Office of the Federal Register
+      source_format: ecfr-xml
+  - source_id: us-usc
+    jurisdiction: us
+    document_class: statute
+    adapter: uslm
+    source_url: https://uscode.house.gov/download/download.shtml
+    metadata:
+      source_authority: Office of the Law Revision Counsel
+      source_format: uslm-xml
+  - source_id: us-co-crs
+    jurisdiction: us-co
+    document_class: statute
+    adapter: colorado-docx
+    source_url: https://leg.colorado.gov/colorado-revised-statutes
+    metadata:
+      source_authority: Colorado General Assembly
+      source_format: docx
+  - source_id: us-co-ccr
+    jurisdiction: us-co
+    document_class: regulation
+    adapter: colorado-ccr
+    source_url: https://www.sos.state.co.us/CCR/Welcome.do
+    metadata:
+      source_authority: Colorado Secretary of State
+      source_format: pdf

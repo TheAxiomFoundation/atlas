@@ -242,13 +242,28 @@ def link_sections(
     return linked
 
 
-def refresh_jurisdiction_counts(client: httpx.Client, rest_url: str, service_key: str) -> None:
-    response = client.post(
-        f"{rest_url}/rpc/refresh_jurisdiction_counts",
+def _post_refresh_rpc(
+    client: httpx.Client,
+    rest_url: str,
+    service_key: str,
+    rpc_name: str,
+) -> httpx.Response:
+    return client.post(
+        f"{rest_url}/rpc/{rpc_name}",
         headers=headers(service_key, write=True),
         json={},
     )
+
+
+def refresh_corpus_analytics(client: httpx.Client, rest_url: str, service_key: str) -> None:
+    response = _post_refresh_rpc(client, rest_url, service_key, "refresh_corpus_analytics")
+    if response.status_code == 404:
+        response = _post_refresh_rpc(client, rest_url, service_key, "refresh_jurisdiction_counts")
     response.raise_for_status()
+
+
+def refresh_jurisdiction_counts(client: httpx.Client, rest_url: str, service_key: str) -> None:
+    refresh_corpus_analytics(client, rest_url, service_key)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -299,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
             by_title,
             chunk_size=args.patch_chunk_size,
         )
-        refresh_jurisdiction_counts(client, rest_url, uploader.key)
+        refresh_corpus_analytics(client, rest_url, uploader.key)
         print(f"\nUpserted {inserted:,} title container(s); linked {linked:,} section row(s).")
     return 0
 

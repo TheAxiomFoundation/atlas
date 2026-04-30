@@ -1,66 +1,45 @@
 """Converters for transforming legislation between formats.
 
 This module provides converters for:
-- Base converter class and Akoma Ntoso models
 - State HTML to USLM XML (US state statutes)
 - UK CLML to Axiom models (UK legislation from legislation.gov.uk)
 - eCFR to Axiom models (US federal regulations from ecfr.gov)
 - Canadian laws-lois-xml to Axiom models (Canadian federal legislation from GitHub)
 """
 
-# Base class and Akoma Ntoso models
-from axiom_corpus.converters.base import (
-    LegalDocConverter,
-    AkomaNtoso,
-    AknSection,
-    AknSubsection,
-    CONVERTERS,
-    register_converter,
-    get_converter,
+from axiom_corpus.converters.ca_laws import (
+    BilingualContent,
+    CanadaLawsConverter,
+    CanadaLawsSource,
+    fetch_act,
 )
-
-# State HTML -> USLM converters (legacy)
+from axiom_corpus.converters.ecfr import (
+    PRIORITY_TITLES,
+    ECFRConverter,
+    ECFRMetadata,
+    FetchResult,
+    fetch_eitc_regulations,
+    fetch_regulation,
+)
 from axiom_corpus.converters.state_to_uslm import (
     OhioToUSLM,
     ParsedSection,
     ParsedSubsection,
     StateToUSLMConverter,
+)
+from axiom_corpus.converters.state_to_uslm import (
     get_converter as get_state_converter,  # Renamed to avoid conflict
 )
 from axiom_corpus.converters.uk_clml import UKCLMLConverter, fetch_uk_legislation
-from axiom_corpus.converters.ecfr import (
-    ECFRConverter,
-    ECFRMetadata,
-    FetchResult,
-    PRIORITY_TITLES,
-    fetch_regulation,
-    fetch_eitc_regulations,
-)
-from axiom_corpus.converters.ca_laws import (
-    CanadaLawsConverter,
-    CanadaLawsSource,
-    BilingualContent,
-    fetch_act,
-)
-
-# US State converters
 from axiom_corpus.converters.us_states.ny import (
-    NYStateConverter,
-    NYSection,
-    NYLawInfo,
-    NYFetchResult,
     NY_LAW_CODES,
+    NYFetchResult,
+    NYLawInfo,
+    NYSection,
+    NYStateConverter,
 )
 
 __all__ = [
-    # Base converter class
-    "LegalDocConverter",
-    "AkomaNtoso",
-    "AknSection",
-    "AknSubsection",
-    "CONVERTERS",
-    "register_converter",
-    "get_converter",
     # State converters (legacy)
     "StateToUSLMConverter",
     "OhioToUSLM",

@@ -325,19 +325,9 @@ def get_service_key() -> str:
     raise SystemExit("service_role key not found")
 
 
-def refresh_jurisdiction_counts(service_key: str) -> None:
-    """Refresh the corpus.jurisdiction_counts materialized view.
-
-    The MV backs the per-jurisdiction pills in the Axiom app.
-    Ingest drivers call this at end-of-run so the stat block picks up
-    newly-added rows without a manual ``REFRESH MATERIALIZED VIEW``.
-    CONCURRENTLY refresh — readers on the landing page don't block.
-
-    Failures are logged but non-fatal: a successful ingest shouldn't
-    be undone just because the cosmetic stats refresh hiccuped.
-    """
+def _post_refresh_rpc(service_key: str, rpc_name: str) -> None:
     req = urllib.request.Request(
-        f"{REST_URL}/rpc/refresh_jurisdiction_counts",
+        f"{REST_URL}/rpc/{rpc_name}",
         data=b"{}",
         headers={
             "apikey": service_key,
@@ -348,14 +338,45 @@ def refresh_jurisdiction_counts(service_key: str) -> None:
         },
         method="POST",
     )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        resp.read()
+
+
+def _warn_refresh_failure(exc: BaseException) -> None:
+    print(
+        f"  WARN: corpus analytics refresh failed (non-fatal): {exc}",
+        file=sys.stderr,
+    )
+
+
+def refresh_corpus_analytics(service_key: str) -> None:
+    """Refresh corpus analytics materialized views.
+
+    The materialized views back the Axiom app's corpus stat block. Ingest
+    drivers call this at end-of-run so jurisdiction and document-class counts
+    pick up newly-added rows without manual ``REFRESH MATERIALIZED VIEW`` calls.
+    CONCURRENTLY refreshes keep readers from blocking.
+
+    Failures are logged but non-fatal: a successful ingest shouldn't
+    be undone just because the cosmetic stats refresh hiccuped.
+    """
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            resp.read()
-    except (urllib.error.HTTPError, urllib.error.URLError) as exc:
-        print(
-            f"  WARN: jurisdiction_counts refresh failed (non-fatal): {exc}",
-            file=sys.stderr,
-        )
+        _post_refresh_rpc(service_key, "refresh_corpus_analytics")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            try:
+                _post_refresh_rpc(service_key, "refresh_jurisdiction_counts")
+            except (TimeoutError, urllib.error.HTTPError, urllib.error.URLError) as fallback_exc:
+                _warn_refresh_failure(fallback_exc)
+            return
+        _warn_refresh_failure(exc)
+    except (TimeoutError, urllib.error.URLError) as exc:
+        _warn_refresh_failure(exc)
+
+
+def refresh_jurisdiction_counts(service_key: str) -> None:
+    """Compatibility wrapper for older ingest drivers."""
+    refresh_corpus_analytics(service_key)
 
 
 # --- Entry point -----------------------------------------------------------
@@ -441,7 +462,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     if not args.dry_run and total > 0:
         assert service_key is not None
-        refresh_jurisdiction_counts(service_key)
+        refresh_corpus_analytics(service_key)
     verb = "would upsert" if args.dry_run else "upserted"
     print(f"\n{verb} {total} rows total")
     return 0
