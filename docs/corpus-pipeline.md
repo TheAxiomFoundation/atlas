@@ -55,6 +55,9 @@ axiom-corpus-ingest sync-r2 \
   --base data/corpus \
   --prefix sources \
   --prefix inventory \
+  --jurisdiction us-co \
+  --document-class policy \
+  --version 2026-04-30 \
   --apply
 ```
 

@@ -636,6 +636,9 @@ def _cmd_sync_r2(args: argparse.Namespace) -> int:
         args.base,
         config=config,
         prefixes=tuple(args.prefix or DEFAULT_ARTIFACT_PREFIXES),
+        jurisdiction=args.jurisdiction,
+        document_class=args.document_class,
+        version=args.version,
         dry_run=not args.apply,
         limit=args.limit,
         progress_stream=sys.stderr,
@@ -657,6 +660,8 @@ def _cmd_artifact_report(args: argparse.Namespace) -> int:
             config=config,
             prefixes=prefixes,
             version=args.version,
+            jurisdiction=args.jurisdiction,
+            document_class=args.document_class,
             supabase_counts_path=args.supabase_counts,
         )
     else:
@@ -664,6 +669,8 @@ def _cmd_artifact_report(args: argparse.Namespace) -> int:
             args.base,
             prefixes=prefixes,
             version=args.version,
+            jurisdiction=args.jurisdiction,
+            document_class=args.document_class,
             supabase_counts_path=args.supabase_counts,
         )
     payload = report.to_mapping()
@@ -935,6 +942,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync_r2.add_argument("--bucket")
     sync_r2.add_argument("--endpoint-url")
     sync_r2.add_argument("--credentials-file", type=Path)
+    sync_r2.add_argument("--jurisdiction")
+    sync_r2.add_argument(
+        "--document-class",
+        choices=[document_class.value for document_class in DocumentClass],
+    )
+    sync_r2.add_argument("--version")
     sync_r2.add_argument("--limit", type=int)
     sync_r2.add_argument(
         "--apply",
@@ -949,6 +962,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     artifact_report.add_argument("--base", type=Path, required=True)
     artifact_report.add_argument("--version")
+    artifact_report.add_argument("--jurisdiction")
+    artifact_report.add_argument(
+        "--document-class",
+        choices=[document_class.value for document_class in DocumentClass],
+    )
     artifact_report.add_argument("--supabase-counts", type=Path)
     artifact_report.add_argument(
         "--prefix",

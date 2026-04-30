@@ -105,6 +105,56 @@ def test_sync_artifacts_to_r2_uploads_missing_and_size_changed_files(tmp_path):
     assert client.uploads[0][2]["Metadata"]["sha256"]
 
 
+def test_sync_artifacts_to_r2_filters_scope(tmp_path):
+    store = CorpusArtifactStore(tmp_path / "corpus")
+    store.write_provisions(
+        store.provisions_path("us-co", "policy", "2026-04-30"),
+        [
+            ProvisionRecord(
+                jurisdiction="us-co",
+                document_class="policy",
+                citation_path="us-co/policy/doc",
+                body="Text.",
+            )
+        ],
+    )
+    store.write_provisions(
+        store.provisions_path("us", "statute", "2026-04-29"),
+        [
+            ProvisionRecord(
+                jurisdiction="us",
+                document_class="statute",
+                citation_path="us/statute/1",
+                body="Text.",
+            )
+        ],
+    )
+    client = FakeR2Client()
+    config = R2Config(
+        bucket="axiom-corpus",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        access_key_id="key",
+        secret_access_key="secret",
+    )
+
+    report = sync_artifacts_to_r2(
+        store.root,
+        config=config,
+        client=client,
+        prefixes=("provisions",),
+        jurisdiction="us-co",
+        document_class="policy",
+        version="2026-04-30",
+        dry_run=True,
+    )
+
+    assert report.local_count == 1
+    assert report.planned_upload_count == 1
+    assert report.bytes_planned == (
+        store.provisions_path("us-co", "policy", "2026-04-30").stat().st_size
+    )
+
+
 def test_artifact_report_flags_r2_and_supabase_mismatches(tmp_path):
     store = CorpusArtifactStore(tmp_path / "corpus")
     store.write_inventory(

@@ -311,6 +311,9 @@ def sync_artifacts_to_r2(
     config: R2Config,
     client: Any | None = None,
     prefixes: Iterable[str] = DEFAULT_ARTIFACT_PREFIXES,
+    jurisdiction: str | None = None,
+    document_class: str | None = None,
+    version: str | None = None,
     dry_run: bool = True,
     limit: int | None = None,
     progress_stream: TextIO | None = None,
@@ -318,7 +321,16 @@ def sync_artifacts_to_r2(
     """Upload missing or size-different corpus artifacts to R2."""
     prefix_tuple = _normalize_prefixes(prefixes)
     r2 = client or make_r2_client(config)
-    local = iter_local_artifacts(root, prefixes=prefix_tuple)
+    local = tuple(
+        artifact
+        for artifact in iter_local_artifacts(root, prefixes=prefix_tuple)
+        if _artifact_matches_scope(
+            artifact.key,
+            jurisdiction=jurisdiction,
+            document_class=document_class,
+            version=version,
+        )
+    )
     remote = list_r2_artifacts(r2, bucket=config.bucket, prefixes=prefix_tuple)
     upload_candidates = tuple(
         artifact
@@ -363,6 +375,8 @@ def build_artifact_report(
     *,
     prefixes: Iterable[str] = DEFAULT_ARTIFACT_PREFIXES,
     version: str | None = None,
+    jurisdiction: str | None = None,
+    document_class: str | None = None,
     supabase_counts_path: str | Path | None = None,
     remote: Mapping[str, RemoteArtifact] | None = None,
 ) -> ArtifactReport:
@@ -371,7 +385,13 @@ def build_artifact_report(
     local = iter_local_artifacts(root_path, prefixes=prefix_tuple)
     supabase_counts = load_provision_count_snapshot(supabase_counts_path)
     rows = _build_scope_rows(
-        root_path, local, remote, version=version, supabase_counts=supabase_counts
+        root_path,
+        local,
+        remote,
+        version=version,
+        jurisdiction=jurisdiction,
+        document_class=document_class,
+        supabase_counts=supabase_counts,
     )
     return ArtifactReport(
         local_root=root_path,
@@ -395,6 +415,8 @@ def build_artifact_report_with_r2(
     client: Any | None = None,
     prefixes: Iterable[str] = DEFAULT_ARTIFACT_PREFIXES,
     version: str | None = None,
+    jurisdiction: str | None = None,
+    document_class: str | None = None,
     supabase_counts_path: str | Path | None = None,
 ) -> ArtifactReport:
     prefix_tuple = _normalize_prefixes(prefixes)
@@ -404,6 +426,8 @@ def build_artifact_report_with_r2(
         root,
         prefixes=prefix_tuple,
         version=version,
+        jurisdiction=jurisdiction,
+        document_class=document_class,
         supabase_counts_path=supabase_counts_path,
         remote=remote,
     )
@@ -415,6 +439,8 @@ def _build_scope_rows(
     remote: Mapping[str, RemoteArtifact] | None,
     *,
     version: str | None,
+    jurisdiction: str | None,
+    document_class: str | None,
     supabase_counts: Mapping[tuple[str, str], int],
 ) -> tuple[ArtifactScopeRow, ...]:
     builders: dict[tuple[str, str, str], dict[str, Any]] = defaultdict(dict)
@@ -425,14 +451,18 @@ def _build_scope_rows(
             _merge_remote_scope(builders, remote_artifact)
     rows: list[ArtifactScopeRow] = []
     for key in sorted(builders):
-        jurisdiction, document_class, row_version = key
+        row_jurisdiction, row_document_class, row_version = key
         if version is not None and row_version != version:
+            continue
+        if jurisdiction is not None and row_jurisdiction != jurisdiction:
+            continue
+        if document_class is not None and row_document_class != document_class:
             continue
         data = builders[key]
         rows.append(
             ArtifactScopeRow(
-                jurisdiction=jurisdiction,
-                document_class=document_class,
+                jurisdiction=row_jurisdiction,
+                document_class=row_document_class,
                 version=row_version,
                 local_inventory=bool(data.get("local_inventory")),
                 local_provisions=bool(data.get("local_provisions")),
@@ -456,7 +486,7 @@ def _build_scope_rows(
                 matched_count=data.get("matched_count"),
                 missing_count=data.get("missing_count"),
                 extra_count=data.get("extra_count"),
-                supabase_count=supabase_counts.get((jurisdiction, document_class)),
+                supabase_count=supabase_counts.get((row_jurisdiction, row_document_class)),
             )
         )
     return tuple(rows)
@@ -512,6 +542,26 @@ def _parse_scope(parts: list[str]) -> tuple[str, str, str, str] | None:
     artifact_type, jurisdiction, document_class = parts[0], parts[1], parts[2]
     row_version = parts[3] if artifact_type == "sources" else Path(parts[3]).stem
     return artifact_type, jurisdiction, document_class, row_version
+
+
+def _artifact_matches_scope(
+    key: str,
+    *,
+    jurisdiction: str | None,
+    document_class: str | None,
+    version: str | None,
+) -> bool:
+    if jurisdiction is None and document_class is None and version is None:
+        return True
+    parsed = _parse_scope(key.split("/"))
+    if parsed is None:
+        return False
+    _, artifact_jurisdiction, artifact_document_class, artifact_version = parsed
+    return (
+        (jurisdiction is None or artifact_jurisdiction == jurisdiction)
+        and (document_class is None or artifact_document_class == document_class)
+        and (version is None or artifact_version == version)
+    )
 
 
 def _merge_coverage(data: dict[str, Any], path: Path) -> None:

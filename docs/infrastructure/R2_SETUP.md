@@ -6,7 +6,7 @@ Axiom Corpus uses Cloudflare R2 for storing raw source files (PDFs, XML, ZIPs).
 
 | Setting | Value |
 |---------|-------|
-| Bucket name | `axiom-corpus` |
+| Bucket name | From `R2_BUCKET` or `~/.config/axiom-foundation/r2-credentials.json` |
 | Region | Auto (global) |
 | Storage class | Standard |
 
@@ -42,7 +42,7 @@ Environment variables for scripts:
 # Load from config file
 export R2_ACCOUNT_ID="010d8d7f3b423be5ce36c7a5a49e91e4"
 export R2_ENDPOINT="https://010d8d7f3b423be5ce36c7a5a49e91e4.r2.cloudflarestorage.com"
-export R2_BUCKET="axiom-corpus"
+export R2_BUCKET="<configured-corpus-bucket>"
 # Access key and secret from ~/.config/axiom-foundation/r2-credentials.json
 ```
 
@@ -77,20 +77,20 @@ s3 = boto3.client(
 # Upload a file
 s3.upload_file(
     'local-file.pdf',
-    'axiom-corpus',
+    os.environ['R2_BUCKET'],
     'sources/guidance/irs/rev-proc/rev-proc-2024-01.pdf'
 )
 
 # Download a file
 s3.download_file(
-    'axiom-corpus',
+    os.environ['R2_BUCKET'],
     'sources/statutes/us/usc/26/32.xml',
     'local-copy.xml'
 )
 
 # List files
 response = s3.list_objects_v2(
-    Bucket='axiom-corpus',
+    Bucket=os.environ['R2_BUCKET'],
     Prefix='sources/guidance/irs/'
 )
 for obj in response.get('Contents', []):
@@ -108,10 +108,20 @@ axiom-corpus-ingest sync-r2 --base data/corpus
 # Upload one or more prefixes
 axiom-corpus-ingest sync-r2 --base data/corpus --prefix sources --prefix inventory --apply
 
+# Upload a scoped release safely
+axiom-corpus-ingest sync-r2 \
+  --base data/corpus \
+  --jurisdiction us-co \
+  --document-class policy \
+  --version 2026-04-30 \
+  --apply
+
 # Compare local artifacts, R2 objects, coverage, and Supabase counts
 axiom-corpus-ingest artifact-report \
   --base data/corpus \
   --version 2026-04-30 \
+  --jurisdiction us-co \
+  --document-class policy \
   --supabase-counts data/corpus/snapshots/provision-counts-2026-04-30.json \
   --include-r2
 ```
