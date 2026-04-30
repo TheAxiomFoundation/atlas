@@ -9,6 +9,7 @@ import os
 import sys
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
@@ -316,6 +317,7 @@ def sync_artifacts_to_r2(
     version: str | None = None,
     dry_run: bool = True,
     limit: int | None = None,
+    workers: int = 1,
     progress_stream: TextIO | None = None,
 ) -> R2SyncReport:
     """Upload missing or size-different corpus artifacts to R2."""
@@ -348,16 +350,16 @@ def sync_artifacts_to_r2(
         planned = planned[:limit]
     uploaded: list[str] = []
     uploaded_bytes = 0
-    for index, artifact in enumerate(planned, start=1):
-        if dry_run:
-            continue
-        _progress(
-            progress_stream,
-            f"uploading {index}/{len(planned)} {artifact.key} ({artifact.size} bytes)",
+    if not dry_run:
+        completed = _upload_artifacts(
+            r2,
+            bucket=config.bucket,
+            artifacts=planned,
+            workers=workers,
+            progress_stream=progress_stream,
         )
-        _upload_artifact(r2, bucket=config.bucket, artifact=artifact)
-        uploaded.append(artifact.key)
-        uploaded_bytes += artifact.size
+        uploaded = [artifact.key for artifact in completed]
+        uploaded_bytes = sum(artifact.size for artifact in completed)
     return R2SyncReport(
         dry_run=dry_run,
         bucket=config.bucket,
@@ -656,6 +658,45 @@ def _upload_artifact(client: Any, *, bucket: str, artifact: LocalArtifact) -> No
         artifact.key,
         ExtraArgs=extra_args,
     )
+
+
+def _upload_artifacts(
+    client: Any,
+    *,
+    bucket: str,
+    artifacts: tuple[LocalArtifact, ...],
+    workers: int,
+    progress_stream: TextIO | None,
+) -> tuple[LocalArtifact, ...]:
+    if not artifacts:
+        return ()
+    worker_count = max(1, workers)
+    if worker_count == 1:
+        uploaded: list[LocalArtifact] = []
+        for index, artifact in enumerate(artifacts, start=1):
+            _progress(
+                progress_stream,
+                f"uploading {index}/{len(artifacts)} {artifact.key} ({artifact.size} bytes)",
+            )
+            _upload_artifact(client, bucket=bucket, artifact=artifact)
+            uploaded.append(artifact)
+        return tuple(uploaded)
+
+    completed: list[tuple[int, LocalArtifact]] = []
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {}
+        for index, artifact in enumerate(artifacts, start=1):
+            _progress(
+                progress_stream,
+                f"uploading {index}/{len(artifacts)} {artifact.key} ({artifact.size} bytes)",
+            )
+            future = executor.submit(_upload_artifact, client, bucket=bucket, artifact=artifact)
+            futures[future] = (index, artifact)
+        for future in as_completed(futures):
+            index, artifact = futures[future]
+            future.result()
+            completed.append((index, artifact))
+    return tuple(artifact for _, artifact in sorted(completed, key=lambda item: item[0]))
 
 
 def _sha256_file(path: Path) -> str:

@@ -256,6 +256,38 @@ def test_sync_artifacts_to_r2_can_scope_uploads(tmp_path):
     assert report.uploaded_keys == ("inventory/us-co/policy/2026-04-30.json",)
 
 
+def test_sync_artifacts_to_r2_supports_parallel_workers(tmp_path):
+    store = CorpusArtifactStore(tmp_path / "corpus")
+    for jurisdiction in ("us-co", "us-ny", "us-tx"):
+        store.write_inventory(
+            store.inventory_path(jurisdiction, "policy", "2026-04-30"),
+            [SourceInventoryItem(citation_path=f"{jurisdiction}/policy/doc")],
+        )
+    client = FakeR2Client()
+    config = R2Config(
+        bucket="axiom-corpus",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        access_key_id="key",
+        secret_access_key="secret",
+    )
+
+    report = sync_artifacts_to_r2(
+        store.root,
+        config=config,
+        client=client,
+        prefixes=("inventory",),
+        dry_run=False,
+        workers=2,
+    )
+
+    assert report.uploaded_count == 3
+    assert report.uploaded_keys == (
+        "inventory/us-co/policy/2026-04-30.json",
+        "inventory/us-ny/policy/2026-04-30.json",
+        "inventory/us-tx/policy/2026-04-30.json",
+    )
+
+
 def test_artifact_report_scope_filters_counts_and_rows(tmp_path):
     store = CorpusArtifactStore(tmp_path / "corpus")
     store.write_inventory(

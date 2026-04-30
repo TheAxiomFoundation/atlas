@@ -641,6 +641,7 @@ def _cmd_sync_r2(args: argparse.Namespace) -> int:
         version=args.version,
         dry_run=not args.apply,
         limit=args.limit,
+        workers=args.workers,
         progress_stream=sys.stderr,
     )
     print(json.dumps(report.to_mapping(), indent=2, sort_keys=True))
@@ -949,6 +950,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync_r2.add_argument("--version")
     sync_r2.add_argument("--limit", type=int)
+    sync_r2.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Concurrent upload workers to use when --apply is set.",
+    )
     sync_r2.add_argument(
         "--apply",
         action="store_true",

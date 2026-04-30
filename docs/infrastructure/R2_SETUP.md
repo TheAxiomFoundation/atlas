@@ -116,6 +116,16 @@ axiom-corpus-ingest sync-r2 \
   --version 2026-04-30 \
   --apply
 
+# Use bounded concurrency for large source trees with many small files
+axiom-corpus-ingest sync-r2 \
+  --base data/corpus \
+  --prefix sources \
+  --jurisdiction us-dc \
+  --document-class statute \
+  --version 2026-04-29 \
+  --workers 16 \
+  --apply
+
 # Compare local artifacts, R2 objects, coverage, and Supabase counts
 axiom-corpus-ingest artifact-report \
   --base data/corpus \
