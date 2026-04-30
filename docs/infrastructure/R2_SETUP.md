@@ -12,38 +12,18 @@ Axiom Corpus uses Cloudflare R2 for storing raw source files (PDFs, XML, ZIPs).
 
 ## Directory Structure
 
-```
+The current corpus pipeline maps the local `data/corpus` artifact layout
+directly into the R2 bucket:
+
+```text
 axiom-corpus (R2 bucket)/
-├── sources/
-│   ├── statutes/
-│   │   ├── us/
-│   │   │   ├── usc/            # US Code USLM XML
-│   │   │   │   ├── 26/         # Title 26 (IRC)
-│   │   │   │   ├── 7/          # Title 7 (Agriculture)
-│   │   │   │   └── ...
-│   │   │   └── cfr/            # Code of Federal Regulations
-│   │   └── states/
-│   │       ├── ny/             # New York statutes
-│   │       ├── ca/             # California statutes
-│   │       └── ...
-│   │
-│   ├── guidance/
-│   │   ├── irs/
-│   │   │   ├── rev-proc/       # Revenue Procedures
-│   │   │   ├── rev-rul/        # Revenue Rulings
-│   │   │   ├── notices/        # IRS Notices
-│   │   │   └── publications/   # IRS Publications
-│   │   └── usda/
-│   │       └── fns/            # Food & Nutrition Service
-│   │
-│   ├── microdata/
-│   │   ├── cps-asec/           # Current Population Survey ASEC
-│   │   ├── acs/                # American Community Survey
-│   │   └── scf/                # Survey of Consumer Finances
-│   │
-│   └── crosstabs/
-│       ├── soi/                # IRS Statistics of Income
-│       └── census/             # Census Bureau tables
+├── sources/{jurisdiction}/{document_class}/{run_id}/...
+├── inventory/{jurisdiction}/{document_class}/{run_id}.json
+├── provisions/{jurisdiction}/{document_class}/{version}.jsonl
+├── coverage/{jurisdiction}/{document_class}/{version}.json
+├── exports/{format}/{jurisdiction}/{document_class}/{version}/...
+├── analytics/{version}.json
+└── snapshots/...
 ```
 
 ## Status
@@ -119,17 +99,21 @@ for obj in response.get('Contents', []):
 
 ## Integration with Axiom Corpus
 
-Axiom Corpus R2 operations use the configured corpus bucket:
+Corpus R2 operations are dry-run first. Use `--apply` to upload:
 
 ```bash
-# Upload local data to R2
-axiom-corpus sync --to-r2
+# Plan uploads for all corpus artifact prefixes
+axiom-corpus-ingest sync-r2 --base data/corpus
 
-# Download from R2 to local
-axiom-corpus sync --from-r2
+# Upload one or more prefixes
+axiom-corpus-ingest sync-r2 --base data/corpus --prefix sources --prefix inventory --apply
 
-# Upload specific source type
-axiom-corpus sync --to-r2 --type=guidance
+# Compare local artifacts, R2 objects, coverage, and Supabase counts
+axiom-corpus-ingest artifact-report \
+  --base data/corpus \
+  --version 2026-04-30 \
+  --supabase-counts data/corpus/snapshots/provision-counts-2026-04-30.json \
+  --include-r2
 ```
 
 ## Related Documentation

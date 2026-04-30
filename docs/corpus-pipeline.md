@@ -45,6 +45,31 @@ conversion belongs outside `axiom_corpus.corpus`; corpus ingestion should depend
 only on source snapshots, inventories, normalized provisions, coverage, and
 derived database/search indexes.
 
+Artifact sync is explicit and dry-run first:
+
+```bash
+axiom-corpus-ingest sync-r2 \
+  --base data/corpus
+
+axiom-corpus-ingest sync-r2 \
+  --base data/corpus \
+  --prefix sources \
+  --prefix inventory \
+  --apply
+```
+
+Use `artifact-report` to compare local artifacts, optional R2 objects, coverage,
+and Supabase count snapshots by `jurisdiction + document_class + version`:
+
+```bash
+axiom-corpus-ingest artifact-report \
+  --base data/corpus \
+  --version 2026-04-30 \
+  --supabase-counts data/corpus/snapshots/provision-counts-2026-04-30.json \
+  --include-r2 \
+  --output data/corpus/analytics/artifact-report-2026-04-30.json
+```
+
 ## Federal eCFR
 
 The eCFR adapter uses structure JSON for independent inventory and full title

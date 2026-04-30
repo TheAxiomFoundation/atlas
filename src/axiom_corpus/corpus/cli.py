@@ -20,6 +20,13 @@ from axiom_corpus.corpus.documents import extract_official_documents
 from axiom_corpus.corpus.ecfr import build_ecfr_inventory, ecfr_run_id, extract_ecfr
 from axiom_corpus.corpus.io import load_provisions, load_source_inventory
 from axiom_corpus.corpus.models import CorpusManifest, DocumentClass, ProvisionRecord
+from axiom_corpus.corpus.r2 import (
+    DEFAULT_ARTIFACT_PREFIXES,
+    build_artifact_report,
+    build_artifact_report_with_r2,
+    load_r2_config,
+    sync_artifacts_to_r2,
+)
 from axiom_corpus.corpus.states import (
     extract_cic_html_release,
     extract_cic_odt_release,
@@ -619,6 +626,55 @@ def _cmd_analytics(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_sync_r2(args: argparse.Namespace) -> int:
+    config = load_r2_config(
+        credential_path=args.credentials_file,
+        bucket=args.bucket,
+        endpoint_url=args.endpoint_url,
+    )
+    report = sync_artifacts_to_r2(
+        args.base,
+        config=config,
+        prefixes=tuple(args.prefix or DEFAULT_ARTIFACT_PREFIXES),
+        dry_run=not args.apply,
+        limit=args.limit,
+        progress_stream=sys.stderr,
+    )
+    print(json.dumps(report.to_mapping(), indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_artifact_report(args: argparse.Namespace) -> int:
+    prefixes = tuple(args.prefix or DEFAULT_ARTIFACT_PREFIXES)
+    if args.include_r2:
+        config = load_r2_config(
+            credential_path=args.credentials_file,
+            bucket=args.bucket,
+            endpoint_url=args.endpoint_url,
+        )
+        report = build_artifact_report_with_r2(
+            args.base,
+            config=config,
+            prefixes=prefixes,
+            version=args.version,
+            supabase_counts_path=args.supabase_counts,
+        )
+    else:
+        report = build_artifact_report(
+            args.base,
+            prefixes=prefixes,
+            version=args.version,
+            supabase_counts_path=args.supabase_counts,
+        )
+    payload = report.to_mapping()
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        payload["written_to"] = str(args.output)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Source-first corpus pipeline tools.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -863,6 +919,50 @@ def build_parser() -> argparse.ArgumentParser:
     analytics.add_argument("--output", type=Path)
     analytics.add_argument("--write", action="store_true")
     analytics.set_defaults(func=_cmd_analytics)
+
+    sync_r2 = sub.add_parser(
+        "sync-r2",
+        help="Plan or upload local corpus artifacts to the configured R2 bucket.",
+    )
+    sync_r2.add_argument("--base", type=Path, required=True)
+    sync_r2.add_argument(
+        "--prefix",
+        action="append",
+        choices=list(DEFAULT_ARTIFACT_PREFIXES),
+        default=[],
+        help="Top-level artifact prefix to include. Repeatable; defaults to all artifact prefixes.",
+    )
+    sync_r2.add_argument("--bucket")
+    sync_r2.add_argument("--endpoint-url")
+    sync_r2.add_argument("--credentials-file", type=Path)
+    sync_r2.add_argument("--limit", type=int)
+    sync_r2.add_argument(
+        "--apply",
+        action="store_true",
+        help="Upload files. Without this flag the command only prints a dry-run plan.",
+    )
+    sync_r2.set_defaults(func=_cmd_sync_r2)
+
+    artifact_report = sub.add_parser(
+        "artifact-report",
+        help="Report local/R2/Supabase artifact coverage by jurisdiction and document class.",
+    )
+    artifact_report.add_argument("--base", type=Path, required=True)
+    artifact_report.add_argument("--version")
+    artifact_report.add_argument("--supabase-counts", type=Path)
+    artifact_report.add_argument(
+        "--prefix",
+        action="append",
+        choices=list(DEFAULT_ARTIFACT_PREFIXES),
+        default=[],
+        help="Top-level artifact prefix to include. Repeatable; defaults to all artifact prefixes.",
+    )
+    artifact_report.add_argument("--include-r2", action="store_true")
+    artifact_report.add_argument("--bucket")
+    artifact_report.add_argument("--endpoint-url")
+    artifact_report.add_argument("--credentials-file", type=Path)
+    artifact_report.add_argument("--output", type=Path)
+    artifact_report.set_defaults(func=_cmd_artifact_report)
 
     return parser
 
