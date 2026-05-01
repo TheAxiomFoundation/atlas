@@ -347,7 +347,7 @@ def _walk_inventory_items(
         if node.get("reserved") or not identifier or not part:
             return
         subpart = identifier
-        subpart_path = f"us/regulation/{title}/{part}/subpart-{subpart.lower()}"
+        subpart_path = f"us/regulation/{title}/{part}/subpart-{subpart}"
         yield SourceInventoryItem(
             citation_path=subpart_path,
             source_url=_ecfr_subpart_url(title, part, subpart, chapter, subchapter),
@@ -375,7 +375,7 @@ def _walk_inventory_items(
                 if only_part is not None and actual_part != only_part:
                     return
                 parent_citation_path = (
-                    f"us/regulation/{title}/{actual_part}/subpart-{subpart.lower()}"
+                    f"us/regulation/{title}/{actual_part}/subpart-{subpart}"
                     if subpart
                     else f"us/regulation/{title}/{actual_part}"
                 )
@@ -512,6 +512,178 @@ def _ecfr_identifiers(
     return identifiers
 
 
+def _metadata_text(metadata: Mapping[str, Any], key: str) -> str | None:
+    value = metadata.get(key)
+    if value is None:
+        return None
+    text = _clean_text(str(value))
+    return text or None
+
+
+def _metadata_int(metadata: Mapping[str, Any], key: str) -> int | None:
+    value = metadata.get(key)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _inventory_heading(item: SourceInventoryItem) -> str | None:
+    metadata = item.metadata or {}
+    heading = _metadata_text(metadata, "heading")
+    if heading:
+        return heading
+    kind = _metadata_text(metadata, "kind")
+    label_description = _metadata_text(metadata, "label_description")
+    if label_description:
+        return label_description.strip(" .") or None
+    label = _metadata_text(metadata, "label")
+    if not label:
+        return None
+    if kind == "section":
+        part = _metadata_text(metadata, "part")
+        section = _metadata_text(metadata, "section")
+        if part and section:
+            label = re.sub(rf"^§\s*{re.escape(part)}\.{re.escape(section)}\s*", "", label)
+        return label.strip(" .") or None
+    if kind == "subpart":
+        subpart = _metadata_text(metadata, "subpart")
+        return _clean_subpart_heading(label, subpart) if subpart else label
+    if kind == "part":
+        part = _metadata_text(metadata, "part")
+        return _clean_part_heading(label, part) if part else label
+    return label
+
+
+def _inventory_legal_identifier(metadata: Mapping[str, Any]) -> str | None:
+    title = _metadata_int(metadata, "title")
+    part = _metadata_text(metadata, "part")
+    if title is None or not part:
+        return None
+    kind = _metadata_text(metadata, "kind")
+    if kind == "section":
+        section = _metadata_text(metadata, "section")
+        if section:
+            return f"{title} CFR {part}.{section}"
+    if kind == "subpart":
+        subpart = _metadata_text(metadata, "subpart")
+        if subpart:
+            return f"{title} CFR part {part}, subpart {subpart}"
+    if kind == "part":
+        return f"{title} CFR part {part}"
+    return None
+
+
+def _inventory_identifiers(metadata: Mapping[str, Any]) -> dict[str, str] | None:
+    title = _metadata_int(metadata, "title")
+    part = _metadata_text(metadata, "part")
+    if title is None or not part:
+        return None
+    return _ecfr_identifiers(
+        title,
+        part,
+        section=_metadata_text(metadata, "section"),
+        subpart=_metadata_text(metadata, "subpart"),
+    )
+
+
+def _inventory_level(metadata: Mapping[str, Any]) -> int | None:
+    kind = _metadata_text(metadata, "kind")
+    if kind == "part":
+        return 0
+    if kind == "subpart":
+        return 1
+    if kind == "section":
+        return 2 if _metadata_text(metadata, "subpart") else 1
+    return None
+
+
+def _inventory_ordinal(metadata: Mapping[str, Any]) -> int | None:
+    kind = _metadata_text(metadata, "kind")
+    if kind == "part":
+        part = _metadata_text(metadata, "part")
+        return _part_ordinal(part) if part else None
+    if kind == "subpart":
+        subpart = _metadata_text(metadata, "subpart")
+        return _subpart_ordinal(subpart) if subpart else None
+    if kind == "section":
+        section = _metadata_text(metadata, "section")
+        return _section_ordinal(section) if section else None
+    return None
+
+
+def _structure_only_provision(
+    item: SourceInventoryItem,
+    version: str,
+    source_as_of: str,
+    expression_date: str,
+) -> ProvisionRecord:
+    metadata = dict(item.metadata or {})
+    parent_citation_path = _metadata_text(metadata, "parent_citation_path")
+    legal_identifier = _inventory_legal_identifier(metadata)
+    metadata.update(
+        {
+            "body_status": "not_in_ecfr_full_xml",
+            "structure_only": True,
+        }
+    )
+    return ProvisionRecord(
+        id=deterministic_provision_id(item.citation_path),
+        jurisdiction="us",
+        document_class=DocumentClass.REGULATION.value,
+        citation_path=item.citation_path,
+        citation_label=legal_identifier,
+        heading=_inventory_heading(item),
+        body=None,
+        version=version,
+        source_url=item.source_url,
+        source_path=item.source_path,
+        source_format=item.source_format,
+        source_as_of=source_as_of,
+        expression_date=expression_date,
+        parent_citation_path=parent_citation_path,
+        parent_id=deterministic_provision_id(parent_citation_path)
+        if parent_citation_path
+        else None,
+        level=_inventory_level(metadata),
+        ordinal=_inventory_ordinal(metadata),
+        kind=_metadata_text(metadata, "kind"),
+        legal_identifier=legal_identifier,
+        identifiers=_inventory_identifiers(metadata),
+        metadata=metadata,
+    )
+
+
+def _records_with_structure_only_placeholders(
+    inventory: tuple[SourceInventoryItem, ...],
+    existing_records: Mapping[str, ProvisionRecord],
+    version: str,
+    source_as_of: str,
+    expression_date: str,
+    failed_titles: set[int],
+) -> tuple[ProvisionRecord, ...]:
+    records_by_citation = dict(existing_records)
+    for item in inventory:
+        if item.citation_path in records_by_citation:
+            continue
+        title = _title_from_citation_path(item.citation_path)
+        if title in failed_titles or not item.sha256:
+            continue
+        records_by_citation[item.citation_path] = _structure_only_provision(
+            item,
+            version=version,
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+        )
+    return tuple(
+        records_by_citation[item.citation_path]
+        for item in inventory
+        if item.citation_path in records_by_citation
+    )
+
+
 def _part_provision(
     elem: ET.Element,
     target: EcfrPartTarget,
@@ -566,7 +738,7 @@ def _subpart_provision(
         return None
     part = target.part
     part_path = f"us/regulation/{target.title}/{part}"
-    citation_path = f"{part_path}/subpart-{subpart.lower()}"
+    citation_path = f"{part_path}/subpart-{subpart}"
     head = elem.find("HEAD")
     heading_text = _element_text(head) if head is not None else None
     heading = _clean_subpart_heading(heading_text, subpart)
@@ -825,6 +997,7 @@ def extract_ecfr(
         )
 
     title_errors: list[str] = []
+    failed_titles: set[int] = set()
     for result in _extract_title_results(
         store,
         pending_titles,
@@ -840,6 +1013,7 @@ def extract_ecfr(
         if result.source_sha256 is not None:
             source_sha256_by_title[result.title] = result.source_sha256
         if result.error is not None:
+            failed_titles.add(result.title)
             title_errors.append(result.error)
             if progress_stream is not None:
                 print(f"error title {result.title}: {result.error}", file=progress_stream)
@@ -874,10 +1048,13 @@ def extract_ecfr(
     inventory_path = store.inventory_path("us", DocumentClass.REGULATION, run_id)
     store.write_inventory(inventory_path, inventory.items)
 
-    records = tuple(
-        existing_records[item.citation_path]
-        for item in inventory.items
-        if item.citation_path in existing_records
+    records = _records_with_structure_only_placeholders(
+        inventory.items,
+        existing_records,
+        version=run_id,
+        source_as_of=as_of,
+        expression_date=expression_date_text,
+        failed_titles=failed_titles,
     )
     provisions_path = store.provisions_path("us", DocumentClass.REGULATION, run_id)
     store.write_provisions(provisions_path, records)

@@ -13,6 +13,11 @@
       "version": "2026-04-29"
     },
     {
+      "document_class": "regulation",
+      "jurisdiction": "us",
+      "version": "2026-05-01"
+    },
+    {
       "document_class": "policy",
       "jurisdiction": "us-co",
       "version": "2026-04-30"

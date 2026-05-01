@@ -325,6 +325,7 @@ def sync_artifacts_to_r2(
     dry_run: bool = True,
     limit: int | None = None,
     workers: int = 1,
+    force: bool = False,
     progress_stream: TextIO | None = None,
 ) -> R2SyncReport:
     """Upload missing or size-different corpus artifacts to R2."""
@@ -350,7 +351,7 @@ def sync_artifacts_to_r2(
     upload_candidates = tuple(
         artifact
         for artifact in local
-        if artifact.key not in remote or remote[artifact.key].size != artifact.size
+        if force or artifact.key not in remote or remote[artifact.key].size != artifact.size
     )
     planned = upload_candidates
     if limit is not None:

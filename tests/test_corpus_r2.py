@@ -105,6 +105,32 @@ def test_sync_artifacts_to_r2_uploads_missing_and_size_changed_files(tmp_path):
     assert client.uploads[0][2]["Metadata"]["sha256"]
 
 
+def test_sync_artifacts_to_r2_force_uploads_same_size_files(tmp_path):
+    store = CorpusArtifactStore(tmp_path / "corpus")
+    store.write_json(store.root / "snapshots" / "counts.json", {"rows": []})
+    snapshot = store.root / "snapshots" / "counts.json"
+    client = FakeR2Client({"snapshots/counts.json": snapshot.stat().st_size})
+    config = R2Config(
+        bucket="axiom-corpus",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        access_key_id="key",
+        secret_access_key="secret",
+    )
+
+    report = sync_artifacts_to_r2(
+        store.root,
+        config=config,
+        client=client,
+        prefixes=("snapshots",),
+        dry_run=False,
+        force=True,
+    )
+
+    assert report.planned_upload_count == 1
+    assert report.skipped_count == 0
+    assert report.uploaded_keys == ("snapshots/counts.json",)
+
+
 def test_sync_artifacts_to_r2_filters_scope(tmp_path):
     store = CorpusArtifactStore(tmp_path / "corpus")
     store.write_provisions(

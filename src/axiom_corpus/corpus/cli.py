@@ -643,6 +643,7 @@ def _cmd_sync_r2(args: argparse.Namespace) -> int:
         dry_run=not args.apply,
         limit=args.limit,
         workers=args.workers,
+        force=args.force,
         progress_stream=sys.stderr,
     )
     print(json.dumps(report.to_mapping(), indent=2, sort_keys=True))
@@ -972,6 +973,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply",
         action="store_true",
         help="Upload files. Without this flag the command only prints a dry-run plan.",
+    )
+    sync_r2.add_argument(
+        "--force",
+        action="store_true",
+        help="Upload matching-size files too.",
     )
     sync_r2.set_defaults(func=_cmd_sync_r2)
 

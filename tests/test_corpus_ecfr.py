@@ -155,7 +155,7 @@ def test_build_ecfr_inventory_from_structure_includes_subparts():
 
     assert [item.citation_path for item in inventory.items] == [
         "us/regulation/7/273",
-        "us/regulation/7/273/subpart-a",
+        "us/regulation/7/273/subpart-A",
         "us/regulation/7/273/1",
     ]
     assert inventory.items[0].source_path == (
@@ -200,10 +200,10 @@ def test_iter_ecfr_title_provisions_builds_subpart_hierarchy():
 
     assert [record.citation_path for record in records] == [
         "us/regulation/7/273",
-        "us/regulation/7/273/subpart-a",
+        "us/regulation/7/273/subpart-A",
         "us/regulation/7/273/1",
     ]
-    assert records[2].parent_citation_path == "us/regulation/7/273/subpart-a"
+    assert records[2].parent_citation_path == "us/regulation/7/273/subpart-A"
     assert records[2].level == 2
 
 
@@ -256,6 +256,105 @@ def test_extract_ecfr_writes_source_inventory_provisions_and_coverage(tmp_path, 
     )
     assert records[1].source_as_of == "2024-04-16"
     assert records[1].expression_date == "2024-04-16"
+
+
+def test_extract_ecfr_writes_structure_only_placeholders(tmp_path, monkeypatch):
+    import axiom_corpus.corpus.ecfr as ecfr
+
+    structure = {
+        **SAMPLE_STRUCTURE,
+        "children": [
+            {
+                **SAMPLE_STRUCTURE["children"][0],
+                "children": [
+                    {
+                        **SAMPLE_STRUCTURE["children"][0]["children"][0],
+                        "children": [
+                            {
+                                **SAMPLE_STRUCTURE["children"][0]["children"][0]["children"][0],
+                                "children": [
+                                    *SAMPLE_STRUCTURE["children"][0]["children"][0]["children"][0][
+                                        "children"
+                                    ],
+                                    {
+                                        "identifier": "273.3",
+                                        "label": "§ 273.3 Missing from XML.",
+                                        "label_description": "Missing from XML.",
+                                        "type": "section",
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    monkeypatch.setattr(ecfr, "fetch_ecfr_structure", lambda title, as_of: structure)
+    monkeypatch.setattr(ecfr, "fetch_ecfr_part_xml", lambda title, part, as_of: SAMPLE_TITLE_XML)
+
+    store = CorpusArtifactStore(tmp_path / "corpus")
+    report = extract_ecfr(
+        store,
+        version="2026-04-29",
+        as_of="2024-04-16",
+        expression_date=date(2024, 4, 16),
+        only_title=7,
+        only_part="273",
+    )
+
+    records = load_provisions(report.provisions_path)
+    assert report.coverage.complete
+    assert report.provisions_written == 4
+    assert [record.citation_path for record in records] == [
+        "us/regulation/7/273",
+        "us/regulation/7/273/1",
+        "us/regulation/7/273/2",
+        "us/regulation/7/273/3",
+    ]
+    placeholder = records[-1]
+    assert placeholder.body is None
+    assert placeholder.heading == "Missing from XML"
+    assert placeholder.parent_citation_path == "us/regulation/7/273"
+    assert placeholder.legal_identifier == "7 CFR 273.3"
+    assert placeholder.identifiers == {
+        "ecfr:title": "7",
+        "ecfr:part": "273",
+        "ecfr:section": "3",
+    }
+    assert placeholder.metadata is not None
+    assert placeholder.metadata["structure_only"] is True
+    assert placeholder.metadata["body_status"] == "not_in_ecfr_full_xml"
+
+
+def test_extract_ecfr_keeps_failed_titles_missing_from_coverage(tmp_path, monkeypatch):
+    import axiom_corpus.corpus.ecfr as ecfr
+
+    def fail_part_xml(title, part, as_of):
+        raise HTTPError("https://example.test", 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(ecfr, "fetch_ecfr_structure", lambda title, as_of: SAMPLE_STRUCTURE)
+    monkeypatch.setattr(ecfr, "fetch_ecfr_part_xml", fail_part_xml)
+
+    store = CorpusArtifactStore(tmp_path / "corpus")
+    report = extract_ecfr(
+        store,
+        version="2026-04-29",
+        as_of="2024-04-16",
+        expression_date=date(2024, 4, 16),
+        only_title=7,
+        only_part="273",
+    )
+
+    assert not report.coverage.complete
+    assert report.title_error_count == 1
+    assert report.provisions_written == 0
+    assert report.coverage.missing_from_provisions == (
+        "us/regulation/7/273",
+        "us/regulation/7/273/1",
+        "us/regulation/7/273/2",
+    )
 
 
 def test_build_ecfr_inventory_skips_missing_titles_in_full_mode(monkeypatch):

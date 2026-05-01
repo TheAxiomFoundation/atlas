@@ -353,18 +353,18 @@ def fetch_provision_ids_for_scope(
     page_size: int = 1_000,
 ) -> tuple[str, ...]:
     scoped_rows: list[tuple[str, int]] = []
-    offset = 0
+    last_id: str | None = None
     while True:
-        query = urllib.parse.urlencode(
-            {
-                "select": "id,level",
-                "jurisdiction": f"eq.{jurisdiction}",
-                "doc_type": f"eq.{document_class}",
-                "order": "id.asc",
-                "limit": str(page_size),
-                "offset": str(offset),
-            }
-        )
+        query_params = {
+            "select": "id,level",
+            "jurisdiction": f"eq.{jurisdiction}",
+            "doc_type": f"eq.{document_class}",
+            "order": "id.asc",
+            "limit": str(page_size),
+        }
+        if last_id is not None:
+            query_params["id"] = f"gt.{last_id}"
+        query = urllib.parse.urlencode(query_params)
         req = urllib.request.Request(
             f"{rest_url}/provisions?{query}",
             headers={
@@ -390,7 +390,7 @@ def fetch_provision_ids_for_scope(
         scoped_rows.extend(page_rows)
         if len(page_rows) < page_size:
             break
-        offset += page_size
+        last_id = page_rows[-1][0]
     scoped_rows.sort(key=lambda row: (-row[1], row[0]))
     return tuple(row[0] for row in scoped_rows)
 
