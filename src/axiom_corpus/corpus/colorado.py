@@ -546,7 +546,7 @@ def _extract_colorado_ccr_document(document: _ColoradoCcrDocument) -> _ColoradoC
 
 
 def _ccr_pdf_lines(data: bytes, document: _ColoradoCcrDocument) -> tuple[str, ...]:
-    import fitz  # type: ignore[import-untyped]
+    import fitz
 
     try:
         pdf = fitz.open(stream=data, filetype="pdf")

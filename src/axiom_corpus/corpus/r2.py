@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
-import boto3  # type: ignore[import-untyped]
+import boto3
 
 from axiom_corpus.corpus.analytics import load_provision_count_snapshot
 from axiom_corpus.corpus.releases import ScopeKey

@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Self, TextIO
 
-import fitz  # type: ignore[import-untyped]
+import fitz
 import requests  # type: ignore[import-untyped]
 import yaml  # type: ignore[import-untyped]
 from bs4 import BeautifulSoup

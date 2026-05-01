@@ -33,8 +33,7 @@ jobs:
 
       - name: Type check with mypy
         run: |
-          mypy src/axiom_corpus --ignore-missing-imports
-        continue-on-error: true  # Strict typing takes time to fully implement
+          mypy src/axiom_corpus/corpus --ignore-missing-imports
 
       - name: Run tests with coverage
         run: |

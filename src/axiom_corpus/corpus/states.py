@@ -1106,7 +1106,7 @@ def _title_from_colorado_supplement_path(path: Path) -> str | None:
 
 
 def _pdf_text(data: bytes) -> str:
-    import fitz  # type: ignore[import-untyped]
+    import fitz
 
     with fitz.open(stream=data, filetype="pdf") as document:
         text = "\n".join(page.get_text("text", sort=True) for page in document)
