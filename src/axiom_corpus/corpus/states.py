@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
 import json
 import re
 import time
@@ -10,8 +12,9 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date
-from io import BytesIO
+from io import BytesIO, TextIOWrapper
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote_plus, urljoin, urlparse
 from xml.etree import ElementTree as ET
@@ -20,7 +23,7 @@ import requests
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from axiom_corpus.corpus.artifacts import CorpusArtifactStore
+from axiom_corpus.corpus.artifacts import CorpusArtifactStore, sha256_bytes
 from axiom_corpus.corpus.coverage import ProvisionCoverageReport, compare_provision_coverage
 from axiom_corpus.corpus.models import DocumentClass, ProvisionRecord, SourceInventoryItem
 from axiom_corpus.corpus.supabase import deterministic_provision_id
@@ -37,6 +40,9 @@ OHIO_USER_AGENT = "axiom-corpus/0.1"
 MINNESOTA_STATUTES_BASE_URL = "https://www.revisor.mn.gov"
 MINNESOTA_STATUTES_SOURCE_FORMAT = "minnesota-statutes-html"
 MINNESOTA_USER_AGENT = "axiom-corpus/0.1"
+CALIFORNIA_LEGINFO_BULK_URL = "https://downloads.leginfo.legislature.ca.gov/pubinfo_2025.zip"
+CALIFORNIA_LEGINFO_BASE_URL = "https://leginfo.legislature.ca.gov"
+CALIFORNIA_BULK_SOURCE_FORMAT = "california-leginfo-bulk"
 TEXAS_STATUTES_BASE_URL = "https://statutes.capitol.texas.gov"
 TEXAS_TCAS_API_BASE = "https://tcss.legis.texas.gov/api"
 TEXAS_TCAS_RESOURCE_BASE = "https://tcss.legis.texas.gov/resources"
@@ -268,6 +274,69 @@ class _MinnesotaSection:
     @property
     def citation_path(self) -> str:
         return f"us-mn/statute/{self.section}"
+
+
+@dataclass(frozen=True)
+class _CaliforniaCode:
+    code: str
+    title: str
+
+    @property
+    def token(self) -> str:
+        return self.code.lower()
+
+    @property
+    def citation_path(self) -> str:
+        return f"us-ca/statute/{self.token}"
+
+
+@dataclass(frozen=True)
+class _CaliforniaTocTarget:
+    law_code: str
+    node_treepath: str
+    section_num: str
+    section_order: int | None
+    title: str | None
+    law_section_version_id: str | None
+    seq_num: int | None
+    parent_citation_path: str
+    level: int
+
+
+@dataclass(frozen=True)
+class _CaliforniaSection:
+    law_code: str
+    section: str
+    heading: str | None
+    body: str | None
+    source_id: str | None
+    source_url: str
+    parent_citation_path: str
+    level: int
+    ordinal: int | None
+    references_to: tuple[str, ...]
+    effective_date: str | None
+    law_section_version_id: str | None
+    active_flg: str | None
+    history: str | None
+    op_statues: str | None
+    op_chapter: str | None
+    op_section: str | None
+    division: str | None
+    title: str | None
+    part: str | None
+    chapter: str | None
+    article: str | None
+    content_file: str | None
+    content_sha256: str
+
+    @property
+    def code_token(self) -> str:
+        return self.law_code.lower()
+
+    @property
+    def citation_path(self) -> str:
+        return f"us-ca/statute/{self.code_token}/{_california_section_token(self.section)}"
 
 
 @dataclass(frozen=True)
@@ -1267,6 +1336,225 @@ def extract_minnesota_statutes(
         coverage_path=coverage_path,
         coverage=coverage,
         source_paths=tuple(source_paths),
+        errors=tuple(errors),
+    )
+
+
+def extract_california_codes_bulk(
+    store: CorpusArtifactStore,
+    *,
+    version: str,
+    source_zip: str | Path | None = None,
+    source_url: str | None = None,
+    source_as_of: str | None = None,
+    expression_date: date | str | None = None,
+    only_title: str | None = None,
+    limit: int | None = None,
+    download_dir: str | Path | None = None,
+    include_inactive: bool = False,
+) -> StateStatuteExtractReport:
+    """Snapshot official California Legislative Counsel bulk data and extract codes."""
+    jurisdiction = "us-ca"
+    only_code = _california_code_filter(only_title)
+    run_id = (
+        state_run_id(version, jurisdiction=jurisdiction, only_title=only_code, limit=limit)
+        if only_code or limit is not None
+        else version
+    )
+    source_as_of_text = source_as_of or version
+    expression_date_text = _date_text(expression_date, source_as_of_text)
+    zip_path = _california_source_zip_path(
+        source_zip=source_zip,
+        download_dir=download_dir,
+        source_url=source_url or CALIFORNIA_LEGINFO_BULK_URL,
+    )
+    zip_relative = f"california-leginfo-bulk/{zip_path.name}"
+    zip_artifact_path = store.source_path(
+        jurisdiction,
+        DocumentClass.STATUTE,
+        run_id,
+        zip_relative,
+    )
+    zip_sha = _write_file_artifact(zip_artifact_path, zip_path)
+    zip_source_key = _state_source_key(jurisdiction, run_id, zip_relative)
+    source_paths: list[Path] = [zip_artifact_path]
+
+    with zipfile.ZipFile(zip_path) as archive:
+        member_names = archive.namelist()
+        codes_member = _california_zip_member(member_names, "CODES_TBL.dat")
+        toc_member = _california_zip_member(member_names, "LAW_TOC_TBL.dat")
+        toc_sections_member = _california_zip_member(member_names, "LAW_TOC_SECTIONS_TBL.dat")
+        sections_member = _california_zip_member(member_names, "LAW_SECTION_TBL.dat")
+        content_member_by_name = _california_content_member_index(member_names)
+
+        code_source_key = zip_source_key
+        toc_source_key = zip_source_key
+        code_source_sha = zip_sha
+        toc_source_sha = zip_sha
+
+        codes = _california_codes_from_table(archive, codes_member)
+        if only_code is not None:
+            codes = tuple(code for code in codes if code.code == only_code)
+        if not codes:
+            raise ValueError(f"no California codes selected for filter: {only_title!r}")
+        code_by_code = {code.code: code for code in codes}
+
+        toc_containers, toc_path_by_key = _california_toc_containers(
+            archive,
+            toc_member,
+            codes=code_by_code,
+            source_path=toc_source_key,
+            sha256=toc_source_sha,
+            include_inactive=include_inactive,
+        )
+        toc_targets = _california_toc_section_targets(
+            archive,
+            toc_sections_member,
+            code_by_code=code_by_code,
+            toc_path_by_key=toc_path_by_key,
+        )
+
+        items: list[SourceInventoryItem] = []
+        records: list[ProvisionRecord] = []
+        errors: list[str] = []
+        remaining = limit
+        title_count = 0
+        container_count = 0
+        section_count = 0
+        skipped_source_count = 0
+        seen_citation_paths: set[str] = set()
+
+        for code in codes:
+            if remaining is not None and remaining <= 0:
+                break
+            code_container = _california_code_container(
+                code,
+                source_path=code_source_key,
+                sha256=code_source_sha,
+            )
+            title_count += 1
+            if code_container.citation_path not in seen_citation_paths:
+                seen_citation_paths.add(code_container.citation_path)
+                items.append(_container_inventory_item(code_container))
+                records.append(
+                    _container_provision(
+                        code_container,
+                        version=run_id,
+                        source_as_of=source_as_of_text,
+                        expression_date=expression_date_text,
+                    )
+                )
+                container_count += 1
+                if remaining is not None:
+                    remaining -= 1
+
+        for container in sorted(
+            toc_containers,
+            key=lambda container: (container.level, container.parent_citation_path or "", container.citation_path),
+        ):
+            if remaining is not None and remaining <= 0:
+                break
+            if container.citation_path in seen_citation_paths:
+                continue
+            seen_citation_paths.add(container.citation_path)
+            items.append(_container_inventory_item(container))
+            records.append(
+                _container_provision(
+                    container,
+                    version=run_id,
+                    source_as_of=source_as_of_text,
+                    expression_date=expression_date_text,
+                )
+            )
+            container_count += 1
+            if remaining is not None:
+                remaining -= 1
+
+        if remaining is None or remaining > 0:
+            for row in _california_table_rows(archive, sections_member, _CALIFORNIA_SECTION_COLUMNS):
+                if remaining is not None and remaining <= 0:
+                    break
+                law_code = (row.get("LAW_CODE") or "").strip().upper()
+                if law_code not in code_by_code:
+                    continue
+                active_flg = row.get("ACTIVE_FLG") or None
+                if not include_inactive and not _california_active_flag(active_flg):
+                    skipped_source_count += 1
+                    continue
+                content_file = row.get("CONTENT_FILE") or None
+                try:
+                    content_bytes, content_member = _california_section_content(
+                        archive,
+                        content_member_by_name,
+                        content_file,
+                    )
+                except (KeyError, ValueError) as exc:
+                    errors.append(
+                        f"{law_code} {row.get('SECTION_NUM') or row.get('ID') or ''}: {exc}"
+                    )
+                    continue
+                target = _california_toc_target(row, toc_targets, code_by_code[law_code])
+                section = _california_section_from_row(
+                    row,
+                    content_bytes=content_bytes,
+                    content_sha256=sha256_bytes(content_bytes),
+                    source_url_base=source_url or CALIFORNIA_LEGINFO_BULK_URL,
+                    target=target,
+                )
+                if section.citation_path in seen_citation_paths:
+                    continue
+                seen_citation_paths.add(section.citation_path)
+                items.append(
+                    SourceInventoryItem(
+                        citation_path=section.citation_path,
+                        source_url=section.source_url,
+                        source_path=zip_source_key,
+                        source_format=CALIFORNIA_BULK_SOURCE_FORMAT,
+                        sha256=zip_sha,
+                        metadata=_california_section_metadata(section),
+                    )
+                )
+                records.append(
+                    _california_section_provision(
+                        section,
+                        version=run_id,
+                        source_path=zip_source_key,
+                        source_as_of=source_as_of_text,
+                        expression_date=expression_date_text,
+                    )
+                )
+                section_count += 1
+                if remaining is not None:
+                    remaining -= 1
+
+    if not items:
+        raise ValueError("no California code provisions extracted")
+
+    inventory_path = store.inventory_path(jurisdiction, DocumentClass.STATUTE, run_id)
+    store.write_inventory(inventory_path, items)
+    provisions_path = store.provisions_path(jurisdiction, DocumentClass.STATUTE, run_id)
+    store.write_provisions(provisions_path, records)
+    coverage = compare_provision_coverage(
+        tuple(items),
+        tuple(records),
+        jurisdiction=jurisdiction,
+        document_class=DocumentClass.STATUTE.value,
+        version=run_id,
+    )
+    coverage_path = store.coverage_path(jurisdiction, DocumentClass.STATUTE, run_id)
+    store.write_json(coverage_path, coverage.to_mapping())
+    return StateStatuteExtractReport(
+        jurisdiction=jurisdiction,
+        title_count=title_count,
+        container_count=container_count,
+        section_count=section_count,
+        provisions_written=len(records),
+        inventory_path=inventory_path,
+        provisions_path=provisions_path,
+        coverage_path=coverage_path,
+        coverage=coverage,
+        source_paths=tuple(source_paths),
+        skipped_source_count=skipped_source_count,
         errors=tuple(errors),
     )
 
@@ -2659,6 +2947,635 @@ def _minnesota_section_provision(
             "status": section.status,
             "references_to": list(section.references_to),
         },
+    )
+
+
+_CALIFORNIA_CODE_COLUMNS = ("CODE", "TITLE")
+_CALIFORNIA_TOC_COLUMNS = (
+    "LAW_CODE",
+    "DIVISION",
+    "TITLE",
+    "PART",
+    "CHAPTER",
+    "ARTICLE",
+    "HEADING",
+    "ACTIVE_FLG",
+    "TRANS_UID",
+    "TRANS_UPDATE",
+    "NODE_SEQUENCE",
+    "NODE_LEVEL",
+    "NODE_POSITION",
+    "NODE_TREEPATH",
+    "CONTAINS_LAW_SECTIONS",
+    "HISTORY_NOTE",
+    "OP_STATUES",
+    "OP_CHAPTER",
+    "OP_SECTION",
+)
+_CALIFORNIA_TOC_SECTION_COLUMNS = (
+    "ID",
+    "LAW_CODE",
+    "NODE_TREEPATH",
+    "SECTION_NUM",
+    "SECTION_ORDER",
+    "TITLE",
+    "OP_STATUES",
+    "OP_CHAPTER",
+    "OP_SECTION",
+    "TRANS_UID",
+    "TRANS_UPDATE",
+    "LAW_SECTION_VERSION_ID",
+    "SEQ_NUM",
+)
+_CALIFORNIA_SECTION_COLUMNS = (
+    "ID",
+    "LAW_CODE",
+    "SECTION_NUM",
+    "OP_STATUES",
+    "OP_CHAPTER",
+    "OP_SECTION",
+    "EFFECTIVE_DATE",
+    "LAW_SECTION_VERSION_ID",
+    "DIVISION",
+    "TITLE",
+    "PART",
+    "CHAPTER",
+    "ARTICLE",
+    "HISTORY",
+    "CONTENT_FILE",
+    "ACTIVE_FLG",
+    "TRANS_UID",
+    "TRANS_UPDATE",
+)
+
+
+def _california_source_zip_path(
+    *,
+    source_zip: str | Path | None,
+    download_dir: str | Path | None,
+    source_url: str,
+) -> Path:
+    if source_zip is not None:
+        path = Path(source_zip)
+        if not path.exists():
+            raise ValueError(f"California bulk source ZIP does not exist: {path}")
+        return path
+    if download_dir is None:
+        raise ValueError("California bulk adapter requires source_zip or download_dir")
+    root = Path(download_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    name = Path(urlparse(source_url).path).name or "pubinfo_2025.zip"
+    path = root / name
+    if path.exists():
+        return path
+    with requests.get(source_url, stream=True, timeout=90) as response:
+        response.raise_for_status()
+        with path.open("wb") as out:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    out.write(chunk)
+    return path
+
+
+def _write_file_artifact(path: Path, source: Path) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    with source.open("rb") as src:
+        for chunk in iter(lambda: src.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if path.exists() or path.is_symlink():
+        path.unlink()
+    try:
+        path.symlink_to(source.resolve())
+    except OSError:
+        with source.open("rb") as src, NamedTemporaryFile(dir=path.parent, delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+            for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                tmp.write(chunk)
+        tmp_path.replace(path)
+    return digest.hexdigest()
+
+
+def _california_zip_member(member_names: list[str], basename: str) -> str:
+    basename_upper = basename.upper()
+    matches = [
+        name
+        for name in member_names
+        if Path(name).name.upper() == basename_upper or name.upper() == basename_upper
+    ]
+    if not matches:
+        raise ValueError(f"California bulk ZIP has no {basename}")
+    return sorted(matches, key=lambda name: (len(name), name))[0]
+
+
+def _california_table_rows(
+    archive: zipfile.ZipFile,
+    member: str,
+    columns: tuple[str, ...],
+) -> Iterator[dict[str, str]]:
+    with archive.open(member) as raw:
+        text = TextIOWrapper(raw, encoding="utf-8-sig", errors="replace", newline="")
+        reader = csv.reader(text, delimiter="\t", quotechar="`")
+        for raw_row in reader:
+            if not raw_row or not any(cell.strip() for cell in raw_row):
+                continue
+            row = [cell.rstrip("\r") for cell in raw_row]
+            if len(row) < len(columns):
+                row.extend([""] * (len(columns) - len(row)))
+            yield {
+                column: _california_null_text(value)
+                for column, value in zip(columns, row, strict=False)
+            }
+
+
+def _california_null_text(value: str) -> str:
+    text = value.strip()
+    return "" if text in {"", "\\N", "NULL"} else text
+
+
+def _california_codes_from_table(
+    archive: zipfile.ZipFile,
+    member: str,
+) -> tuple[_CaliforniaCode, ...]:
+    codes: list[_CaliforniaCode] = []
+    for row in _california_table_rows(archive, member, _CALIFORNIA_CODE_COLUMNS):
+        code = (row.get("CODE") or "").strip().upper()
+        title = _clean_text(row.get("TITLE"))
+        if not code or not title:
+            continue
+        codes.append(_CaliforniaCode(code=code, title=title))
+    return tuple(sorted(codes, key=lambda code: code.code))
+
+
+def _california_code_filter(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip().upper().removeprefix("CODE-").removeprefix("CODE ")
+    if not re.fullmatch(r"[A-Z0-9]{1,8}", text):
+        raise ValueError(f"invalid California code filter: {value!r}")
+    return text
+
+
+def _california_code_container(
+    code: _CaliforniaCode,
+    *,
+    source_path: str,
+    sha256: str,
+) -> _StateContainer:
+    return _StateContainer(
+        jurisdiction="us-ca",
+        title=code.token,
+        kind="code",
+        num=code.code,
+        heading=code.title,
+        citation_path=code.citation_path,
+        parent_citation_path=None,
+        level=0,
+        ordinal=None,
+        source_path=source_path,
+        source_url=CALIFORNIA_LEGINFO_BULK_URL,
+        source_id=code.code,
+        source_format=CALIFORNIA_BULK_SOURCE_FORMAT,
+        sha256=sha256,
+        metadata={
+            "law_code": code.code,
+            "code_title": code.title,
+        },
+    )
+
+
+def _california_toc_containers(
+    archive: zipfile.ZipFile,
+    member: str,
+    *,
+    codes: dict[str, _CaliforniaCode],
+    source_path: str,
+    sha256: str,
+    include_inactive: bool,
+) -> tuple[tuple[_StateContainer, ...], dict[tuple[str, str], str]]:
+    raw_rows = list(_california_table_rows(archive, member, _CALIFORNIA_TOC_COLUMNS))
+    path_by_key: dict[tuple[str, str], str] = {}
+    for row in raw_rows:
+        law_code = (row.get("LAW_CODE") or "").strip().upper()
+        treepath = row.get("NODE_TREEPATH") or ""
+        if law_code not in codes or not treepath:
+            continue
+        path_by_key[(law_code, treepath)] = _california_toc_citation_path(law_code, treepath)
+
+    containers: list[_StateContainer] = []
+    for row in raw_rows:
+        law_code = (row.get("LAW_CODE") or "").strip().upper()
+        treepath = row.get("NODE_TREEPATH") or ""
+        if law_code not in codes or not treepath:
+            continue
+        if not include_inactive and not _california_active_flag(row.get("ACTIVE_FLG")):
+            continue
+        code = codes[law_code]
+        kind, num = _california_toc_kind_num(row)
+        parent_treepath = _california_parent_treepath(treepath)
+        parent_path = (
+            path_by_key.get((law_code, parent_treepath))
+            if parent_treepath is not None
+            else None
+        ) or code.citation_path
+        node_level = _california_int(row.get("NODE_LEVEL"))
+        containers.append(
+            _StateContainer(
+                jurisdiction="us-ca",
+                title=code.token,
+                kind=kind,
+                num=num,
+                heading=_clean_text(row.get("HEADING")) or None,
+                citation_path=path_by_key[(law_code, treepath)],
+                parent_citation_path=parent_path,
+                level=(node_level + 1) if node_level is not None else 1,
+                ordinal=_california_int(row.get("NODE_SEQUENCE"))
+                or _california_int(row.get("NODE_POSITION")),
+                source_path=source_path,
+                source_url=None,
+                source_id=treepath,
+                source_format=CALIFORNIA_BULK_SOURCE_FORMAT,
+                sha256=sha256,
+                metadata={
+                    "law_code": law_code,
+                    "division": row.get("DIVISION") or None,
+                    "title": row.get("TITLE") or None,
+                    "part": row.get("PART") or None,
+                    "chapter": row.get("CHAPTER") or None,
+                    "article": row.get("ARTICLE") or None,
+                    "active_flg": row.get("ACTIVE_FLG") or None,
+                    "node_sequence": row.get("NODE_SEQUENCE") or None,
+                    "node_level": row.get("NODE_LEVEL") or None,
+                    "node_position": row.get("NODE_POSITION") or None,
+                    "node_treepath": treepath,
+                    "contains_law_sections": row.get("CONTAINS_LAW_SECTIONS") or None,
+                    "history_note": row.get("HISTORY_NOTE") or None,
+                    "op_statues": row.get("OP_STATUES") or None,
+                    "op_chapter": row.get("OP_CHAPTER") or None,
+                    "op_section": row.get("OP_SECTION") or None,
+                },
+            )
+        )
+    return tuple(containers), path_by_key
+
+
+def _california_toc_citation_path(law_code: str, treepath: str) -> str:
+    return f"us-ca/statute/{law_code.lower()}/node-{_clean_path_token(treepath)}"
+
+
+def _california_toc_kind_num(row: dict[str, str]) -> tuple[str, str]:
+    for key, kind in (
+        ("ARTICLE", "article"),
+        ("CHAPTER", "chapter"),
+        ("PART", "part"),
+        ("TITLE", "title"),
+        ("DIVISION", "division"),
+    ):
+        value = _clean_text(row.get(key))
+        if value:
+            return kind, value
+    return "node", row.get("NODE_TREEPATH") or row.get("NODE_POSITION") or "0"
+
+
+def _california_parent_treepath(treepath: str) -> str | None:
+    text = treepath.strip()
+    if not text:
+        return None
+    for delimiter in (".", "/", "-", " "):
+        if delimiter in text:
+            parent = delimiter.join(part for part in text.split(delimiter)[:-1] if part)
+            return parent or None
+    return None
+
+
+def _california_toc_section_targets(
+    archive: zipfile.ZipFile,
+    member: str,
+    *,
+    code_by_code: dict[str, _CaliforniaCode],
+    toc_path_by_key: dict[tuple[str, str], str],
+) -> dict[tuple[str, str], _CaliforniaTocTarget]:
+    targets: dict[tuple[str, str], _CaliforniaTocTarget] = {}
+    fallback_targets: dict[tuple[str, str], _CaliforniaTocTarget] = {}
+    for row in _california_table_rows(archive, member, _CALIFORNIA_TOC_SECTION_COLUMNS):
+        law_code = (row.get("LAW_CODE") or "").strip().upper()
+        section = row.get("SECTION_NUM") or ""
+        if law_code not in code_by_code or not section:
+            continue
+        treepath = row.get("NODE_TREEPATH") or ""
+        parent_path = toc_path_by_key.get((law_code, treepath)) or code_by_code[law_code].citation_path
+        target = _CaliforniaTocTarget(
+            law_code=law_code,
+            node_treepath=treepath,
+            section_num=section,
+            section_order=_california_int(row.get("SECTION_ORDER")),
+            title=row.get("TITLE") or None,
+            law_section_version_id=row.get("LAW_SECTION_VERSION_ID") or None,
+            seq_num=_california_int(row.get("SEQ_NUM")),
+            parent_citation_path=parent_path,
+            level=_california_toc_target_level(treepath),
+        )
+        if target.law_section_version_id:
+            targets.setdefault((law_code, target.law_section_version_id), target)
+        fallback_targets.setdefault((law_code, section), target)
+    targets.update({key: value for key, value in fallback_targets.items() if key not in targets})
+    return targets
+
+
+def _california_toc_target_level(treepath: str) -> int:
+    if not treepath:
+        return 1
+    for delimiter in (".", "/", "-", " "):
+        if delimiter in treepath:
+            return len([part for part in treepath.split(delimiter) if part]) + 1
+    return 2
+
+
+def _california_active_flag(value: str | None) -> bool:
+    return (value or "").strip().upper() in {"", "A", "Y", "1", "TRUE"}
+
+
+def _california_int(value: str | None) -> int | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def _california_section_content(
+    archive: zipfile.ZipFile,
+    member_by_name: dict[str, str],
+    content_file: str | None,
+) -> tuple[bytes, str]:
+    if not content_file:
+        raise ValueError("missing content XML filename")
+    member = _california_content_member(member_by_name, content_file)
+    return archive.read(member), member
+
+
+def _california_content_member_index(member_names: list[str]) -> dict[str, str]:
+    member_by_name: dict[str, str] = {}
+    for member in member_names:
+        member_by_name.setdefault(member.upper(), member)
+        member_by_name.setdefault(Path(member).name.upper(), member)
+    return member_by_name
+
+
+def _california_content_member(member_by_name: dict[str, str], content_file: str) -> str:
+    normalized = content_file.replace("\\", "/").strip("/")
+    candidates = [
+        normalized,
+        Path(normalized).name,
+        f"pubinfo/{normalized}",
+        f"PUBINFO/{normalized}",
+    ]
+    for candidate in candidates:
+        found = member_by_name.get(candidate.upper())
+        if found is not None:
+            return found
+    raise KeyError(f"content XML not found: {content_file}")
+
+
+def _california_toc_target(
+    row: dict[str, str],
+    targets: dict[tuple[str, str], _CaliforniaTocTarget],
+    code: _CaliforniaCode,
+) -> _CaliforniaTocTarget:
+    law_code = (row.get("LAW_CODE") or "").strip().upper()
+    version_id = row.get("LAW_SECTION_VERSION_ID") or ""
+    section = row.get("SECTION_NUM") or ""
+    target = targets.get((law_code, version_id)) if version_id else None
+    target = target or targets.get((law_code, section))
+    if target is not None:
+        return target
+    return _CaliforniaTocTarget(
+        law_code=law_code,
+        node_treepath="",
+        section_num=section,
+        section_order=None,
+        title=None,
+        law_section_version_id=version_id or None,
+        seq_num=None,
+        parent_citation_path=code.citation_path,
+        level=1,
+    )
+
+
+def _california_section_from_row(
+    row: dict[str, str],
+    *,
+    content_bytes: bytes,
+    content_sha256: str,
+    source_url_base: str,
+    target: _CaliforniaTocTarget,
+) -> _CaliforniaSection:
+    del source_url_base
+    law_code = (row.get("LAW_CODE") or "").strip().upper()
+    section = row.get("SECTION_NUM") or ""
+    heading, body = _california_section_heading_body(content_bytes, section=section)
+    heading = heading or target.title
+    return _CaliforniaSection(
+        law_code=law_code,
+        section=section,
+        heading=heading,
+        body=body,
+        source_id=row.get("ID") or row.get("LAW_SECTION_VERSION_ID") or None,
+        source_url=_california_section_url(law_code, section),
+        parent_citation_path=target.parent_citation_path,
+        level=target.level,
+        ordinal=target.section_order or target.seq_num or _section_ordinal(section),
+        references_to=_california_references(content_bytes, self_law_code=law_code, self_section=section),
+        effective_date=row.get("EFFECTIVE_DATE") or None,
+        law_section_version_id=row.get("LAW_SECTION_VERSION_ID") or None,
+        active_flg=row.get("ACTIVE_FLG") or None,
+        history=row.get("HISTORY") or None,
+        op_statues=row.get("OP_STATUES") or None,
+        op_chapter=row.get("OP_CHAPTER") or None,
+        op_section=row.get("OP_SECTION") or None,
+        division=row.get("DIVISION") or None,
+        title=row.get("TITLE") or None,
+        part=row.get("PART") or None,
+        chapter=row.get("CHAPTER") or None,
+        article=row.get("ARTICLE") or None,
+        content_file=row.get("CONTENT_FILE") or None,
+        content_sha256=content_sha256,
+    )
+
+
+def _california_section_url(law_code: str, section: str) -> str:
+    return (
+        f"{CALIFORNIA_LEGINFO_BASE_URL}/faces/codes_displaySection.xhtml"
+        f"?lawCode={quote(law_code)}&sectionNum={quote(section)}"
+    )
+
+
+def _california_section_token(section: str) -> str:
+    return _clean_path_token(section.rstrip("."))
+
+
+def _california_section_heading_body(
+    content_bytes: bytes,
+    *,
+    section: str,
+) -> tuple[str | None, str | None]:
+    text = content_bytes.decode("utf-8-sig", errors="replace")
+    try:
+        root = ET.fromstring(text)
+        heading = _california_xml_heading(root, section=section)
+        body = _california_xml_body(root)
+    except ET.ParseError:
+        soup = BeautifulSoup(text, "html.parser")
+        heading = None
+        title_tag = soup.find(["heading", "title", "h1", "h2", "h3"])
+        if isinstance(title_tag, Tag):
+            heading = _clean_text(title_tag.get_text(" ", strip=True)) or None
+        body = _clean_multiline_text(soup.get_text("\n", strip=True)) or None
+    return heading, body
+
+
+def _california_xml_heading(root: ET.Element, *, section: str) -> str | None:
+    for elem in root.iter():
+        name = _local_name(elem.tag).lower()
+        if name in {"heading", "title", "catchline", "caption"}:
+            value = _element_text(elem)
+            if value and value != section:
+                return _california_strip_section_prefix(value, section)
+    return None
+
+
+def _california_strip_section_prefix(value: str, section: str) -> str:
+    text = _clean_text(value)
+    pattern = rf"^(?:section\s+|§\s*)?{re.escape(section)}[\.\s:-]+"
+    return re.sub(pattern, "", text, flags=re.I).strip() or text
+
+
+def _california_xml_body(root: ET.Element) -> str | None:
+    preferred_block_names = {
+        "p",
+        "para",
+        "paragraph",
+        "subdivision",
+        "subsection",
+        "sectiontext",
+    }
+    lines: list[str] = []
+    for elem in root.iter():
+        name = _local_name(elem.tag).lower()
+        if name in preferred_block_names:
+            value = _element_text(elem)
+            if value and value not in lines:
+                lines.append(value)
+    if not lines:
+        for elem in root.iter():
+            name = _local_name(elem.tag).lower()
+            if name in {"content", "text"}:
+                value = _element_text(elem)
+                if value and value not in lines:
+                    lines.append(value)
+    if not lines:
+        value = _element_text(root)
+        return value or None
+    return "\n".join(lines).strip() or None
+
+
+def _california_references(
+    content_bytes: bytes,
+    *,
+    self_law_code: str,
+    self_section: str,
+) -> tuple[str, ...]:
+    text = content_bytes.decode("utf-8-sig", errors="replace")
+    refs: set[str] = set()
+    for match in re.finditer(
+        r"codes_displaySection\.xhtml\?[^\"'<> ]*lawCode=(?P<code>[A-Za-z0-9]+)"
+        r"[^\"'<> ]*sectionNum=(?P<section>[A-Za-z0-9_.-]+)",
+        text,
+    ):
+        code = match.group("code").upper()
+        section = unquote_plus(match.group("section"))
+        ref = f"us-ca/statute/{code.lower()}/{_california_section_token(section)}"
+        if code != self_law_code or _california_section_token(section) != _california_section_token(
+            self_section
+        ):
+            refs.add(ref)
+    for match in re.finditer(
+        r"lawCode=(?P<code>[A-Za-z0-9]+).*?sectionNum=(?P<section>[A-Za-z0-9_.-]+)",
+        text,
+    ):
+        code = match.group("code").upper()
+        section = unquote_plus(match.group("section"))
+        ref = f"us-ca/statute/{code.lower()}/{_california_section_token(section)}"
+        if code != self_law_code or _california_section_token(section) != _california_section_token(
+            self_section
+        ):
+            refs.add(ref)
+    return tuple(sorted(refs))
+
+
+def _california_section_metadata(section: _CaliforniaSection) -> dict[str, Any]:
+    return {
+        "kind": "section",
+        "law_code": section.law_code,
+        "section": section.section,
+        "heading": section.heading,
+        "parent_citation_path": section.parent_citation_path,
+        "source_id": section.source_id,
+        "effective_date": section.effective_date,
+        "law_section_version_id": section.law_section_version_id,
+        "active_flg": section.active_flg,
+        "history": section.history,
+        "op_statues": section.op_statues,
+        "op_chapter": section.op_chapter,
+        "op_section": section.op_section,
+        "division": section.division,
+        "title": section.title,
+        "part": section.part,
+        "chapter": section.chapter,
+        "article": section.article,
+        "content_file": section.content_file,
+        "content_sha256": section.content_sha256,
+        "references_to": list(section.references_to),
+    }
+
+
+def _california_section_provision(
+    section: _CaliforniaSection,
+    *,
+    version: str,
+    source_path: str,
+    source_as_of: str,
+    expression_date: str,
+) -> ProvisionRecord:
+    legal_identifier = f"Cal. {section.law_code} Code § {section.section}"
+    return ProvisionRecord(
+        id=deterministic_provision_id(section.citation_path),
+        jurisdiction="us-ca",
+        document_class=DocumentClass.STATUTE.value,
+        citation_path=section.citation_path,
+        citation_label=legal_identifier,
+        heading=section.heading,
+        body=section.body,
+        version=version,
+        source_url=section.source_url,
+        source_path=source_path,
+        source_id=section.source_id,
+        source_format=CALIFORNIA_BULK_SOURCE_FORMAT,
+        source_as_of=source_as_of,
+        expression_date=expression_date,
+        parent_citation_path=section.parent_citation_path,
+        parent_id=deterministic_provision_id(section.parent_citation_path),
+        level=section.level,
+        ordinal=section.ordinal,
+        kind="section",
+        legal_identifier=legal_identifier,
+        identifiers={
+            "california:law_code": section.law_code,
+            "california:section": section.section,
+        },
+        metadata=_california_section_metadata(section),
     )
 
 

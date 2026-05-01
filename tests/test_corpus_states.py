@@ -5,6 +5,7 @@ from axiom_corpus.corpus.artifacts import CorpusArtifactStore
 from axiom_corpus.corpus.cli import main
 from axiom_corpus.corpus.io import load_provisions, load_source_inventory
 from axiom_corpus.corpus.states import (
+    extract_california_codes_bulk,
     extract_cic_html_release,
     extract_cic_odt_release,
     extract_colorado_docx_release,
@@ -266,6 +267,25 @@ SAMPLE_MINNESOTA_CHAPTER = """<!DOCTYPE html>
 """
 
 
+SAMPLE_CALIFORNIA_SECTION_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<section>
+  <heading>17052. Personal exemption credit</heading>
+  <content>
+    <p>(a) A credit is allowed.</p>
+    <p>See <a href="https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=RTC&amp;sectionNum=17053">Section 17053</a>.</p>
+  </content>
+</section>
+"""
+
+
+SAMPLE_CALIFORNIA_INACTIVE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<section>
+  <heading>17053. Repealed credit</heading>
+  <content><p>This section is inactive.</p></content>
+</section>
+"""
+
+
 SAMPLE_TEXAS_HTML = """<html><body><pre xml:space="preserve">
 <p class="center" style="font-weight:bold;">TAX CODE</p>
 <p class="center" style="font-weight:bold;">TITLE 1. PROPERTY TAX CODE</p>
@@ -339,6 +359,105 @@ def _write_minnesota_fixture(source_dir):
         SAMPLE_MINNESOTA_PART
     )
     (chapter_dir / "chapter-256B.html").write_text(SAMPLE_MINNESOTA_CHAPTER)
+
+
+def _write_california_bulk_fixture(path):
+    def row(*values):
+        return "\t".join(values) + "\n"
+
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "CODES_TBL.dat",
+            row("RTC", "Revenue and Taxation Code")
+            + row("WIC", "Welfare and Institutions Code"),
+        )
+        archive.writestr(
+            "LAW_TOC_TBL.dat",
+            row(
+                "RTC",
+                "2",
+                "10",
+                "10.2",
+                "3",
+                "2",
+                "Personal Income Tax Credits",
+                "Y",
+                "",
+                "",
+                "1",
+                "1",
+                "1",
+                "1.1",
+                "Y",
+                "",
+                "",
+                "",
+                "",
+            )
+        )
+        archive.writestr(
+            "LAW_TOC_SECTIONS_TBL.dat",
+            row(
+                "1",
+                "RTC",
+                "1.1",
+                "17052",
+                "1",
+                "Personal exemption credit",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "1001",
+                "1",
+            )
+        )
+        archive.writestr(
+            "LAW_SECTION_TBL.dat",
+            row(
+                "1",
+                "RTC",
+                "17052",
+                "",
+                "",
+                "",
+                "2025-01-01",
+                "1001",
+                "2",
+                "10",
+                "10.2",
+                "3",
+                "2",
+                "Added by Stats. 2025.",
+                "rtc-17052.xml",
+                "Y",
+                "",
+                "",
+            )
+            + row(
+                "2",
+                "RTC",
+                "17053",
+                "",
+                "",
+                "",
+                "2025-01-01",
+                "1002",
+                "2",
+                "10",
+                "10.2",
+                "3",
+                "2",
+                "Repealed by Stats. 2025.",
+                "rtc-17053.xml",
+                "N",
+                "",
+                "",
+            ),
+        )
+        archive.writestr("rtc-17052.xml", SAMPLE_CALIFORNIA_SECTION_XML)
+        archive.writestr("rtc-17053.xml", SAMPLE_CALIFORNIA_INACTIVE_XML)
 
 
 def _write_texas_fixture(source_dir):
@@ -579,6 +698,44 @@ def test_extract_minnesota_statutes_writes_state_records(tmp_path):
     assert "[Repealed, 1974 c 1 s 1]" in (records[3].body or "")
 
 
+def test_extract_california_codes_bulk_writes_state_records(tmp_path):
+    source_zip = tmp_path / "pubinfo_2025.zip"
+    _write_california_bulk_fixture(source_zip)
+    store = CorpusArtifactStore(tmp_path / "corpus")
+
+    report = extract_california_codes_bulk(
+        store,
+        version="2026-05-01",
+        source_zip=source_zip,
+        source_as_of="2026-04-26",
+        only_title="RTC",
+    )
+
+    assert report.coverage.complete
+    assert report.title_count == 1
+    assert report.container_count == 2
+    assert report.section_count == 1
+    assert report.skipped_source_count == 1
+    inventory = load_source_inventory(report.inventory_path)
+    records = load_provisions(report.provisions_path)
+    assert [record.citation_path for record in records] == [
+        "us-ca/statute/rtc",
+        "us-ca/statute/rtc/node-1.1",
+        "us-ca/statute/rtc/17052",
+    ]
+    assert [item.citation_path for item in inventory] == [
+        "us-ca/statute/rtc",
+        "us-ca/statute/rtc/node-1.1",
+        "us-ca/statute/rtc/17052",
+    ]
+    assert records[-1].heading == "Personal exemption credit"
+    assert records[-1].parent_citation_path == "us-ca/statute/rtc/node-1.1"
+    assert records[-1].source_format == "california-leginfo-bulk"
+    assert records[-1].source_as_of == "2026-04-26"
+    assert records[-1].metadata["references_to"] == ["us-ca/statute/rtc/17053"]
+    assert "A credit is allowed" in (records[-1].body or "")
+
+
 def test_extract_colorado_docx_release_writes_state_records(tmp_path):
     release_dir = tmp_path / "release2025"
     docx_dir = release_dir / "docx"
@@ -792,6 +949,31 @@ def test_extract_minnesota_statutes_cli_local_source(tmp_path, capsys):
     assert exit_code == 0
     assert '"jurisdiction": "us-mn"' in output
     assert '"provisions_written": 4' in output
+
+
+def test_extract_california_codes_cli_local_source(tmp_path, capsys):
+    source_zip = tmp_path / "pubinfo_2025.zip"
+    _write_california_bulk_fixture(source_zip)
+    base = tmp_path / "corpus"
+
+    exit_code = main(
+        [
+            "extract-california-codes",
+            "--base",
+            str(base),
+            "--version",
+            "2026-05-01",
+            "--source-zip",
+            str(source_zip),
+            "--only-title",
+            "RTC",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert '"jurisdiction": "us-ca"' in output
+    assert '"provisions_written": 3' in output
 
 
 def test_extract_cic_state_html_cli(tmp_path, capsys):

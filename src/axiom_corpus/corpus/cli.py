@@ -36,6 +36,7 @@ from axiom_corpus.corpus.r2 import (
 from axiom_corpus.corpus.releases import ReleaseManifest, resolve_release_manifest_path
 from axiom_corpus.corpus.states import (
     StateStatuteExtractReport,
+    extract_california_codes_bulk,
     extract_cic_html_release,
     extract_cic_odt_release,
     extract_colorado_docx_release,
@@ -597,6 +598,36 @@ def _cmd_extract_minnesota_statutes(args: argparse.Namespace) -> int:
     return 0 if report.coverage.complete or args.allow_incomplete else 2
 
 
+def _cmd_extract_california_codes_bulk(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_california_codes_bulk(
+        store,
+        version=args.version,
+        source_zip=args.source_zip,
+        source_url=args.source_url,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        limit=args.limit,
+        download_dir=args.download_dir,
+        include_inactive=args.include_inactive,
+    )
+    print(
+        json.dumps(
+            _state_statute_report_payload(
+                report,
+                source_id="us-ca-codes",
+                adapter="california-codes-bulk",
+                version=args.version,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
 def _cmd_extract_state_statutes(args: argparse.Namespace) -> int:
     manifest_path = args.manifest
     manifest = CorpusManifest.load(manifest_path)
@@ -787,6 +818,19 @@ def _extract_state_statute_source(
             workers=_optional_int(options.get("workers")) or 4,
             download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
         )
+    if adapter == "california-codes-bulk":
+        return extract_california_codes_bulk(
+            store,
+            version=version,
+            source_zip=_optional_manifest_path(manifest_path, options, "source_zip"),
+            source_url=source.source_url,
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            include_inactive=bool(options.get("include_inactive", False)),
+        )
     raise ValueError(f"unsupported state statute adapter: {source.adapter}")
 
 
@@ -800,10 +844,11 @@ def _state_statute_plan_payload(
     options = _state_source_options(source)
     adapter = _canonical_state_statute_adapter(source.adapter)
     path_key = "source_dir" if adapter == "dc-code" else "release_dir"
-    source_path = (
-        _optional_manifest_path(manifest_path, options, "source_dir")
-        if adapter in {"minnesota-statutes", "ohio-revised-code", "texas-tcas"}
-        else _required_manifest_path(manifest_path, options, path_key)
+    source_path = _state_statute_source_path_for_plan(
+        adapter,
+        manifest_path=manifest_path,
+        options=options,
+        path_key=path_key,
     )
     return {
         "source_id": source.source_id,
@@ -879,6 +924,12 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "minnesota": "minnesota-statutes",
         "minnesota-statutes": "minnesota-statutes",
         "mn": "minnesota-statutes",
+        "ca": "california-codes-bulk",
+        "california": "california-codes-bulk",
+        "california-codes": "california-codes-bulk",
+        "california-codes-bulk": "california-codes-bulk",
+        "california-leginfo": "california-codes-bulk",
+        "ca-leginfo": "california-codes-bulk",
         "texas-tcas": "texas-tcas",
         "texas-api": "texas-tcas",
         "tcas": "texas-tcas",
@@ -900,6 +951,20 @@ def _required_manifest_path(
     if not path.is_absolute():
         path = manifest_path.parent / path
     return path
+
+
+def _state_statute_source_path_for_plan(
+    adapter: str,
+    *,
+    manifest_path: Path,
+    options: dict[str, Any],
+    path_key: str,
+) -> Path | None:
+    if adapter in {"minnesota-statutes", "ohio-revised-code", "texas-tcas"}:
+        return _optional_manifest_path(manifest_path, options, "source_dir")
+    if adapter == "california-codes-bulk":
+        return _optional_manifest_path(manifest_path, options, "source_zip")
+    return _required_manifest_path(manifest_path, options, path_key)
 
 
 def _optional_manifest_path(
@@ -1288,6 +1353,26 @@ def build_parser() -> argparse.ArgumentParser:
     extract_minnesota_statutes_cmd.add_argument("--workers", type=int, default=4)
     extract_minnesota_statutes_cmd.add_argument("--allow-incomplete", action="store_true")
     extract_minnesota_statutes_cmd.set_defaults(func=_cmd_extract_minnesota_statutes)
+
+    extract_california_codes_cmd = sub.add_parser(
+        "extract-california-codes",
+        help="Snapshot official California Legislative Counsel bulk code data.",
+    )
+    extract_california_codes_cmd.add_argument("--base", type=Path, required=True)
+    extract_california_codes_cmd.add_argument("--version", required=True)
+    extract_california_codes_cmd.add_argument("--source-zip", type=Path)
+    extract_california_codes_cmd.add_argument(
+        "--source-url",
+        default="https://downloads.leginfo.legislature.ca.gov/pubinfo_2025.zip",
+    )
+    extract_california_codes_cmd.add_argument("--download-dir", type=Path)
+    extract_california_codes_cmd.add_argument("--only-title")
+    extract_california_codes_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_california_codes_cmd.add_argument("--expression-date")
+    extract_california_codes_cmd.add_argument("--limit", type=int)
+    extract_california_codes_cmd.add_argument("--include-inactive", action="store_true")
+    extract_california_codes_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_california_codes_cmd.set_defaults(func=_cmd_extract_california_codes_bulk)
 
     extract_texas_tcas_cmd = sub.add_parser(
         "extract-texas-tcas",

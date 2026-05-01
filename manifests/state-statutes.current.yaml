@@ -1,5 +1,18 @@
 version: "2026-04-29"
 sources:
+  - source_id: us-ca-codes
+    jurisdiction: us-ca
+    document_class: statute
+    adapter: california-codes-bulk
+    source_url: https://downloads.leginfo.legislature.ca.gov/pubinfo_2025.zip
+    version: "2026-05-01"
+    options:
+      source_zip: ../data/statutes/us-ca/pubinfo_2025.zip
+      source_as_of: "2026-04-26"
+      expression_date: "2026-04-26"
+    metadata:
+      source_authority: California Legislative Counsel
+
   - source_id: us-co-crs
     jurisdiction: us-co
     document_class: statute
