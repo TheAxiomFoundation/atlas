@@ -53,6 +53,7 @@ data/guidance/
 data/federal/
 data/ca/
 data/us/
+sources/dc/dc-law-xml/
 *.db
 *.sqlite
 

@@ -1,7 +1,7 @@
 """Ingest the DC Code from local ``sources/dc/dc-law-xml`` into Supabase.
 
-The DC Code is checked into this repo as ~21,700 Akoma-Ntoso-derived XML
-files under ``sources/dc/dc-law-xml/us/dc/council/code/titles/*/sections``.
+The DC Code source is a local clone of the DC Council ``dc-law-xml`` repository,
+with XML files under ``sources/dc/dc-law-xml/us/dc/council/code/titles/*/sections``.
 The existing :class:`axiom_corpus.converters.us_states.dc.DCConverter` knows how
 to parse those XML bytes into a :class:`Section`; this script walks the
 local tree and funnels every section through that converter + the shared
