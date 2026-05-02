@@ -20,7 +20,7 @@ from axiom_corpus.corpus.analytics import load_provision_count_snapshot
 from axiom_corpus.corpus.releases import ScopeKey
 
 DEFAULT_R2_BUCKET = "axiom-corpus"
-DEFAULT_R2_ACCOUNT_ID = "010d8d7f3b423be5ce36c7a5a49e91e4"
+DEFAULT_R2_ACCOUNT_ID = "011fb8d44f0e4d9832265ac9f748bc6b"
 DEFAULT_R2_CREDENTIAL_PATH = Path.home() / ".config" / "axiom-foundation" / "r2-credentials.json"
 DEFAULT_ARTIFACT_PREFIXES = (
     "sources",

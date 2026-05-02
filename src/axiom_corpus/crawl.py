@@ -66,7 +66,7 @@ from axiom_corpus.sources.registry import SourceConfig, get_all_configs
 from axiom_corpus.sources.specs import get_section_pattern
 
 # R2 config
-R2_ENDPOINT = "https://010d8d7f3b423be5ce36c7a5a49e91e4.r2.cloudflarestorage.com"
+R2_ENDPOINT = "https://011fb8d44f0e4d9832265ac9f748bc6b.r2.cloudflarestorage.com"
 R2_BUCKET = "axiom-corpus"
 
 # States with bulk downloads available from Archive.org/Public.Resource.org

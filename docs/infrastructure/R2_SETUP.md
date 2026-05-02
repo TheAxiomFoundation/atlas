@@ -40,8 +40,8 @@ Environment variables for scripts:
 
 ```bash
 # Load from config file
-export R2_ACCOUNT_ID="010d8d7f3b423be5ce36c7a5a49e91e4"
-export R2_ENDPOINT="https://010d8d7f3b423be5ce36c7a5a49e91e4.r2.cloudflarestorage.com"
+export R2_ACCOUNT_ID="011fb8d44f0e4d9832265ac9f748bc6b"
+export R2_ENDPOINT="https://011fb8d44f0e4d9832265ac9f748bc6b.r2.cloudflarestorage.com"
 export R2_BUCKET="<configured-corpus-bucket>"
 # Access key and secret from ~/.config/axiom-foundation/r2-credentials.json
 ```
