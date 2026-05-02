@@ -1,4 +1,4 @@
--- Drop legacy schema names from the live Axiom app data surface.
+-- Drop old schema names from the live Axiom app data surface.
 
 CREATE SCHEMA IF NOT EXISTS corpus;
 

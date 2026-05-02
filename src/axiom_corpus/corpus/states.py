@@ -3653,14 +3653,7 @@ def _request_bytes(session: requests.Session, url: str) -> bytes:
 
 
 def _texas_source_file(source_root: Path, relative_name: str) -> Path:
-    path = source_root / relative_name
-    if path.exists():
-        return path
-    if relative_name.startswith("html/"):
-        legacy = source_root / relative_name.removeprefix("html/")
-        if legacy.exists():
-            return legacy
-    return path
+    return source_root / relative_name
 
 
 def _write_texas_download(root: Path, relative_name: str, data: bytes) -> None:
