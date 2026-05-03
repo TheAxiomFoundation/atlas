@@ -767,3 +767,149 @@ def test_artifact_report_cli_defaults_to_current_release(tmp_path, capsys):
     assert exit_code == 0
     assert "release" not in payload
     assert payload["scope_count"] == 2
+
+
+def test_release_artifact_manifest_cli_writes_digest_manifest(tmp_path, capsys):
+    from axiom_corpus.corpus.artifacts import CorpusArtifactStore
+
+    store = CorpusArtifactStore(tmp_path / "corpus")
+    source = store.source_path("us-co", "policy", "2026-04-30", "source.html")
+    source_sha = store.write_text(source, "<p>Text.</p>")
+    store.write_inventory(
+        store.inventory_path("us-co", "policy", "2026-04-30"),
+        [
+            SourceInventoryItem(
+                citation_path="us-co/policy/doc",
+                source_path=source.relative_to(store.root).as_posix(),
+                sha256=source_sha,
+            )
+        ],
+    )
+    store.write_provisions(
+        store.provisions_path("us-co", "policy", "2026-04-30"),
+        [
+            ProvisionRecord(
+                jurisdiction="us-co",
+                document_class="policy",
+                citation_path="us-co/policy/doc",
+                version="2026-04-30",
+                body="Text.",
+                source_as_of="2026-04-30",
+                expression_date="2026-04-30",
+            )
+        ],
+    )
+    store.write_json(
+        store.coverage_path("us-co", "policy", "2026-04-30"),
+        {
+            "complete": True,
+            "source_count": 1,
+            "provision_count": 1,
+            "matched_count": 1,
+            "missing_from_provisions": [],
+            "extra_provisions": [],
+        },
+    )
+    release_dir = store.root / "releases"
+    release_dir.mkdir(parents=True)
+    (release_dir / "current.json").write_text(
+        json.dumps(
+            {
+                "name": "current",
+                "scopes": [
+                    {
+                        "jurisdiction": "us-co",
+                        "document_class": "policy",
+                        "version": "2026-04-30",
+                    }
+                ],
+            }
+        )
+    )
+    output = store.root / "releases" / "current-artifacts.json"
+
+    exit_code = main(
+        [
+            "release-artifact-manifest",
+            "--base",
+            str(store.root),
+            "--release",
+            "current",
+            "--output",
+            str(output),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    written = json.loads(output.read_text())
+
+    assert exit_code == 0
+    assert payload["artifact_count"] == 4
+    assert payload["written_to"] == str(output)
+    assert written["artifacts"][0]["sha256"]
+
+
+def test_validate_release_cli_gates_release(tmp_path, capsys):
+    from axiom_corpus.corpus.artifacts import CorpusArtifactStore
+
+    store = CorpusArtifactStore(tmp_path / "corpus")
+    source = store.source_path("us-co", "policy", "2026-04-30", "source.html")
+    source_sha = store.write_text(source, "<p>Text.</p>")
+    store.write_inventory(
+        store.inventory_path("us-co", "policy", "2026-04-30"),
+        [
+            SourceInventoryItem(
+                citation_path="us-co/policy/doc",
+                source_path=source.relative_to(store.root).as_posix(),
+                sha256=source_sha,
+            )
+        ],
+    )
+    store.write_provisions(
+        store.provisions_path("us-co", "policy", "2026-04-30"),
+        [
+            ProvisionRecord(
+                jurisdiction="us-co",
+                document_class="policy",
+                citation_path="us-co/policy/doc",
+                version="2026-04-30",
+                body="Text.",
+                source_as_of="2026-04-30",
+                expression_date="2026-04-30",
+            )
+        ],
+    )
+    store.write_json(
+        store.coverage_path("us-co", "policy", "2026-04-30"),
+        {
+            "complete": True,
+            "source_count": 1,
+            "provision_count": 1,
+            "matched_count": 1,
+            "missing_from_provisions": [],
+            "extra_provisions": [],
+        },
+    )
+    release_dir = store.root / "releases"
+    release_dir.mkdir(parents=True)
+    (release_dir / "current.json").write_text(
+        json.dumps(
+            {
+                "name": "current",
+                "scopes": [
+                    {
+                        "jurisdiction": "us-co",
+                        "document_class": "policy",
+                        "version": "2026-04-30",
+                    }
+                ],
+            }
+        )
+    )
+
+    exit_code = main(["validate-release", "--base", str(store.root), "--release", "current"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["ok"] is True
+    assert payload["error_count"] == 0
+    assert payload["warning_count"] == 0

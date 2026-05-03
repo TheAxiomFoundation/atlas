@@ -33,6 +33,7 @@ provisions/{jurisdiction}/{document_class}/{version}.jsonl
 coverage/{jurisdiction}/{document_class}/{version}.json
 exports/{format}/{jurisdiction}/{document_class}/{version}/...
 analytics/{version}.json
+releases/{release}.artifacts.json
 ```
 
 R2 should hold official source snapshots, source inventories, normalized
@@ -77,6 +78,28 @@ tracked `manifests/releases/<name>.json`. Unscoped reports auto-use the
 `current` release when it exists, so production dashboards exclude old probes
 and superseded source snapshots by default. Use `--release <name>` for a
 specific release, or `--all-scopes` for an exhaustive diagnostic report.
+
+Release publication should also write an immutable artifact manifest with exact
+keys, sizes, and SHA-256 digests:
+
+```bash
+axiom-corpus-ingest release-artifact-manifest \
+  --base data/corpus \
+  --release current \
+  --output data/corpus/releases/current.artifacts.json
+```
+
+Before promoting or publishing a release, validate the release against local
+artifacts, optional R2 presence, Supabase count snapshots, persisted coverage,
+and basic provision invariants:
+
+```bash
+axiom-corpus-ingest validate-release \
+  --base data/corpus \
+  --release current \
+  --supabase-counts data/corpus/snapshots/provision-counts-2026-05-02.json \
+  --include-r2
+```
 
 ## Federal eCFR
 
@@ -228,9 +251,14 @@ axiom-corpus-ingest coverage \
 
 ## Supabase
 
-Supabase is derived from normalized provision JSONL. The ingestion importer
-should map provision records into `corpus.provisions`, then refresh
-`corpus.provision_counts`.
+Supabase is current derived/indexed state, not the durable historical corpus.
+R2 artifacts and release artifact manifests are the source of truth for
+historical versions. Supabase rows are keyed for the current searchable corpus,
+so loading a newer provision with the same citation path updates that current
+index rather than preserving side-by-side historical versions.
+
+The ingestion importer maps normalized provision JSONL into
+`corpus.provisions`, then refreshes `corpus.provision_counts`.
 
 The exact row projection is generated with:
 

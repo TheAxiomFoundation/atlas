@@ -23,7 +23,8 @@ axiom-corpus (R2 bucket)/
 ├── coverage/{jurisdiction}/{document_class}/{version}.json
 ├── exports/{format}/{jurisdiction}/{document_class}/{version}/...
 ├── analytics/{version}.json
-└── snapshots/...
+├── snapshots/...
+└── releases/{release}.artifacts.json
 ```
 
 ## Status
@@ -130,6 +131,19 @@ axiom-corpus-ingest sync-r2 \
 axiom-corpus-ingest artifact-report \
   --base data/corpus \
   --supabase-counts data/corpus/snapshots/provision-counts-2026-04-30.json \
+  --include-r2
+
+# Write an immutable digest manifest for release artifacts
+axiom-corpus-ingest release-artifact-manifest \
+  --base data/corpus \
+  --release current \
+  --output data/corpus/releases/current.artifacts.json
+
+# Validate a release before promotion/publication
+axiom-corpus-ingest validate-release \
+  --base data/corpus \
+  --release current \
+  --supabase-counts data/corpus/snapshots/provision-counts-2026-05-02.json \
   --include-r2
 ```
 
