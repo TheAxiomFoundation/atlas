@@ -725,7 +725,8 @@ def fetch_guidance(
             console.print(table)
             return
 
-        # Fetch and store each document
+        # Fetch, extract, and store each document. Corpus records must contain
+        # extracted source text, not PDF-size markers or metadata placeholders.
         for i, doc in enumerate(all_docs):
             console.print(
                 f"[{i + 1}/{len(all_docs)}] Fetching {doc.doc_type.value} {doc.doc_number}...",
@@ -733,42 +734,15 @@ def fetch_guidance(
             )
 
             try:
-                # Fetch PDF to get file size (we don't parse content yet)
-                pdf_content = fetcher.fetch_pdf(doc)
-                pdf_size = len(pdf_content)
-
-                # Optionally save PDF
+                pdf_path = None
                 if download_dir:
                     download_dir.mkdir(parents=True, exist_ok=True)
                     pdf_path = download_dir / doc.pdf_filename
-                    pdf_path.write_bytes(pdf_content)
 
-                # Create RevenueProcedure model with placeholder content
-                from datetime import date as date_module
-
-                from axiom_corpus.models_guidance import RevenueProcedure
-
-                rev_proc = RevenueProcedure(
-                    doc_number=doc.doc_number,
-                    doc_type=doc.doc_type,
-                    title=fetcher._generate_title(doc),
-                    irb_citation="",  # Would need IRB lookup
-                    published_date=date_module(doc.year, 1, 1),  # Placeholder
-                    full_text=f"[PDF content: {pdf_size} bytes]",
-                    sections=[],
-                    effective_date=None,
-                    tax_years=[doc.year, doc.year + 1],
-                    subject_areas=["General"],
-                    parameters={},
-                    source_url=doc.pdf_url,
-                    pdf_url=doc.pdf_url,
-                    retrieved_at=date_module.today(),
-                )
-
-                # Store in database
+                rev_proc = fetcher.fetch_and_extract(doc, save_pdf=pdf_path)
                 storage.store_revenue_procedure(rev_proc)
                 fetched_count += 1
-                console.print(f"[green]OK[/green] ({pdf_size:,} bytes)")
+                console.print(f"[green]OK[/green] ({len(rev_proc.full_text):,} chars)")
 
             except Exception as e:
                 error_count += 1

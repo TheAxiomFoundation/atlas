@@ -340,41 +340,20 @@ class IRSBulkFetcher:
                 )
 
             try:
-                pdf_content = self.fetch_pdf(doc)
-
-                # Optionally save PDF
                 pdf_path = None
                 if download_dir:
                     pdf_path = download_dir / doc.pdf_filename
-                    pdf_path.write_bytes(pdf_content)
 
-                # Create RevenueProcedure model
-                # Note: Full text extraction from PDF would require additional processing
-                rev_proc = RevenueProcedure(
-                    doc_number=doc.doc_number,
-                    doc_type=doc.doc_type,
-                    title=self._generate_title(doc),
-                    irb_citation="",  # Would need to look up in IRB index
-                    published_date=date(doc.year, 1, 1),  # Placeholder
-                    full_text=f"[PDF content for {doc.doc_type.value} {doc.doc_number}]",
-                    sections=[],
-                    effective_date=None,
-                    tax_years=[doc.year, doc.year + 1],
-                    subject_areas=["General"],
-                    parameters={},
-                    source_url=doc.pdf_url,
-                    pdf_url=doc.pdf_url,
-                    retrieved_at=date.today(),
-                )
+                rev_proc = self.fetch_and_extract(doc, save_pdf=pdf_path)
 
                 if storage_callback:
                     storage_callback(rev_proc)  # pragma: no cover
 
                 results.append(rev_proc)
 
-            except httpx.HTTPError as e:
+            except (httpx.HTTPError, ValueError) as e:
                 if progress_callback:
-                    progress_callback(f"  ERROR: Failed to fetch {doc.doc_number}: {e}")
+                    progress_callback(f"  ERROR: Failed to fetch/extract {doc.doc_number}: {e}")
 
         return results
 

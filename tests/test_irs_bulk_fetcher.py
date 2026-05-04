@@ -130,9 +130,7 @@ class TestIRSBulkFetcher:
         <a href="rr-24-15.pdf">rr-24-15.pdf</a>
         """
         with patch.object(fetcher, "_fetch_drop_listing", return_value=mock_html):
-            docs = fetcher.list_documents(
-                year=2024, doc_types=[GuidanceType.REV_PROC]
-            )
+            docs = fetcher.list_documents(year=2024, doc_types=[GuidanceType.REV_PROC])
 
         assert len(docs) == 1
         assert docs[0].doc_type == GuidanceType.REV_PROC
@@ -198,10 +196,14 @@ class TestBulkDownloadWithExtraction:
                 "axiom_corpus.fetchers.pdf_extractor.PDFTextExtractor"
             ) as mock_extractor_class:
                 mock_extractor = MagicMock()
-                mock_extractor.extract_text.return_value = "Rev. Proc. 2024-40\nSECTION 1. PURPOSE\nTest content"
+                mock_extractor.extract_text.return_value = (
+                    "Rev. Proc. 2024-40\nSECTION 1. PURPOSE\nTest content"
+                )
                 mock_extractor_class.return_value = mock_extractor
 
-                with patch("axiom_corpus.fetchers.irs_parser.IRSDocumentParser") as mock_parser_class:
+                with patch(
+                    "axiom_corpus.fetchers.irs_parser.IRSDocumentParser"
+                ) as mock_parser_class:
                     mock_parser = MagicMock()
                     mock_parser.parse.return_value = MagicMock(
                         sections=[],
@@ -209,7 +211,9 @@ class TestBulkDownloadWithExtraction:
                     )
                     mock_parser_class.return_value = mock_parser
 
-                    with patch("axiom_corpus.fetchers.irs_parser.IRSParameterExtractor") as mock_param_class:
+                    with patch(
+                        "axiom_corpus.fetchers.irs_parser.IRSParameterExtractor"
+                    ) as mock_param_class:
                         mock_param = MagicMock()
                         mock_param.extract.return_value = {}
                         mock_param_class.return_value = mock_param
@@ -266,6 +270,28 @@ class TestBulkDownloadWithExtraction:
         assert pdf_file.exists()
         assert pdf_file.read_bytes() == mock_pdf
 
+    def test_bulk_download_uses_extracted_guidance_text(self, fetcher, tmp_path):
+        """Bulk storage must use extracted text, not synthetic PDF markers."""
+        mock_html = """
+        <a href="rp-24-40.pdf">rp-24-40.pdf</a>
+        """
+        extracted = MagicMock(
+            doc_number="2024-40",
+            full_text="Rev. Proc. 2024-40\nSECTION 1. PURPOSE\nActual source text",
+        )
+
+        with patch.object(fetcher, "_fetch_drop_listing", return_value=mock_html):
+            with patch.object(fetcher, "fetch_and_extract", return_value=extracted) as mock_extract:
+                results = fetcher.fetch_and_store(
+                    years=[2024],
+                    doc_types=[GuidanceType.REV_PROC],
+                    download_dir=tmp_path,
+                )
+
+        assert results == [extracted]
+        assert "[PDF content" not in results[0].full_text
+        mock_extract.assert_called_once()
+
     def test_bulk_download_handles_errors_gracefully(self, fetcher, tmp_path):
         """Test that errors during download don't stop the entire process."""
         import httpx
@@ -277,11 +303,14 @@ class TestBulkDownloadWithExtraction:
 
         call_count = [0]
 
-        def mock_fetch_pdf(doc):
+        def mock_fetch_and_extract(doc, save_pdf=None):
             call_count[0] += 1
             if call_count[0] == 1:
                 raise httpx.HTTPError("404 Not Found")
-            return b"%PDF-1.4 success"
+            if save_pdf is not None:
+                save_pdf.parent.mkdir(parents=True, exist_ok=True)
+                save_pdf.write_bytes(b"%PDF-1.4 success")
+            return MagicMock(doc_number=doc.doc_number)
 
         error_messages = []
 
@@ -290,7 +319,7 @@ class TestBulkDownloadWithExtraction:
                 error_messages.append(msg)
 
         with patch.object(fetcher, "_fetch_drop_listing", return_value=mock_html):
-            with patch.object(fetcher, "fetch_pdf", side_effect=mock_fetch_pdf):
+            with patch.object(fetcher, "fetch_and_extract", side_effect=mock_fetch_and_extract):
                 results = fetcher.fetch_and_store(
                     years=[2024],
                     doc_types=[GuidanceType.REV_PROC],
