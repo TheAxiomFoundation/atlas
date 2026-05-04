@@ -69,6 +69,11 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-ne",
+      "version": "2026-05-04"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-nc",
       "version": "2026-04-29"
     },

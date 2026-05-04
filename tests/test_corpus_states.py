@@ -1,20 +1,51 @@
 import zipfile
+from datetime import date
 from xml.sax.saxutils import escape
+
+import pytest
+import requests
 
 from axiom_corpus.corpus.artifacts import CorpusArtifactStore
 from axiom_corpus.corpus.cli import main
 from axiom_corpus.corpus.io import load_provisions, load_source_inventory
 from axiom_corpus.corpus.states import (
+    _date_text,
+    _load_nebraska_html,
+    _nebraska_chapter_filter,
+    _nebraska_chapter_from_href,
+    _nebraska_chapter_link_heading,
+    _nebraska_href_to_citation_path,
+    _nebraska_section_from_href,
+    _nebraska_section_heading_parts,
+    _non_file_url,
+    _parse_nebraska_chapter_sections,
+    _parse_nebraska_chapters,
+    _parse_state_html_sections,
+    _split_state_html_last_hyphen,
+    _split_state_html_prefixed_section,
+    _split_state_html_triplet,
+    _state_html_converter,
+    _state_html_parse_args,
+    _state_html_parse_context,
+    _state_html_section_identity,
+    _state_html_section_metadata,
+    _state_html_section_number,
+    _state_html_to_section_args,
+    _state_html_to_sections,
     extract_california_codes_bulk,
     extract_cic_html_release,
     extract_cic_odt_release,
     extract_colorado_docx_release,
     extract_dc_code,
     extract_minnesota_statutes,
+    extract_nebraska_revised_statutes,
     extract_ohio_revised_code,
+    extract_state_html_directory,
     extract_texas_tcas,
     state_run_id,
 )
+from axiom_corpus.models import Citation as LegacyCitation
+from axiom_corpus.models import Section as LegacySection
 
 SAMPLE_DC_INDEX = """<?xml version="1.0" encoding="utf-8"?>
 <container xmlns="https://code.dccouncil.us/schemas/dc-library"
@@ -63,6 +94,25 @@ SAMPLE_CIC_HTML = """<!DOCTYPE html>
       </div>
     </div>
   </main>
+</body>
+</html>
+"""
+
+SAMPLE_LOCAL_AL_HTML = """<!DOCTYPE html>
+<html>
+<head><title>Code of Alabama 40-18-1</title></head>
+<body>
+<h1>Code of Alabama 1975</h1>
+<h2>Title 40 - Revenue and Taxation</h2>
+<h3>Chapter 18 - Income Tax</h3>
+<div class="content">
+<p><b>Section 40-18-1 Definitions.</b></p>
+<p>For the purpose of this chapter, the following terms shall have the meanings
+respectively ascribed to them by this section:</p>
+<p>(1) PERSON. Includes an individual, trust, estate, partnership, corporation,
+or other entity.</p>
+<p>(Acts 1935, No. 194, p. 256.)</p>
+</div>
 </body>
 </html>
 """
@@ -267,6 +317,33 @@ SAMPLE_MINNESOTA_CHAPTER = """<!DOCTYPE html>
 """
 
 
+SAMPLE_NEBRASKA_INDEX = """<!DOCTYPE html>
+<html>
+<body>
+  <main>
+    <a href="/laws/browse-chapters.php?chapter=01">Chapter 1 ACCOUNTANTS</a>
+  </main>
+</body>
+</html>
+"""
+
+
+SAMPLE_NEBRASKA_CHAPTER = """<!DOCTYPE html>
+<html>
+<body>
+  <div class="printwidth">
+    <strong>1-101. Repealed. Laws 1957, c. 1, § 65.</strong><br/>
+  </div>
+  <div class="printwidth">
+    <strong>1-105. Act, how cited.</strong><br/>
+    <p style="text-indent: 1.5em;">Sections <a href="/laws/statutes.php?statute=1-105">1-105</a> to <a href="/laws/statutes.php?statute=1-171">1-171</a> shall be known as the Public Accountancy Act.</p>
+    <div class="source"><span><strong>Source:</strong></span>Laws 1957, c. 1, § 64, p. 78; <a href="/FloorDocs/104/PDF/Slip/LB159.pdf">Laws 2015, LB159, § 1.</a></div>
+  </div>
+</body>
+</html>
+"""
+
+
 SAMPLE_CALIFORNIA_SECTION_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <section>
   <heading>17052. Personal exemption credit</heading>
@@ -359,6 +436,15 @@ def _write_minnesota_fixture(source_dir):
         SAMPLE_MINNESOTA_PART
     )
     (chapter_dir / "chapter-256B.html").write_text(SAMPLE_MINNESOTA_CHAPTER)
+
+
+def _write_nebraska_fixture(source_dir):
+    chapter_dir = source_dir / "nebraska-revised-statutes-html" / "chapters"
+    chapter_dir.mkdir(parents=True)
+    (source_dir / "nebraska-revised-statutes-html" / "index.html").write_text(
+        SAMPLE_NEBRASKA_INDEX
+    )
+    (chapter_dir / "chapter-1-full.html").write_text(SAMPLE_NEBRASKA_CHAPTER)
 
 
 def _write_california_bulk_fixture(path):
@@ -698,6 +784,199 @@ def test_extract_minnesota_statutes_writes_state_records(tmp_path):
     assert "[Repealed, 1974 c 1 s 1]" in (records[3].body or "")
 
 
+def test_extract_nebraska_revised_statutes_writes_state_records(tmp_path):
+    source_dir = tmp_path / "nebraska"
+    _write_nebraska_fixture(source_dir)
+    store = CorpusArtifactStore(tmp_path / "corpus")
+
+    report = extract_nebraska_revised_statutes(
+        store,
+        version="2026-05-04",
+        source_dir=source_dir,
+        source_as_of="2026-05-04",
+        only_title="1",
+    )
+
+    assert report.coverage.complete
+    assert report.title_count == 1
+    assert report.container_count == 1
+    assert report.section_count == 2
+    records = load_provisions(report.provisions_path)
+    assert [record.citation_path for record in records] == [
+        "us-ne/statute/1",
+        "us-ne/statute/1/1-101",
+        "us-ne/statute/1/1-105",
+    ]
+    assert records[0].heading == "ACCOUNTANTS"
+    assert records[1].metadata["status"] == "repealed"
+    assert records[1].body is None
+    assert records[2].heading == "Act, how cited"
+    assert records[2].metadata["references_to"] == ["us-ne/statute/1/1-171"]
+    assert records[2].metadata["source_history"] == [
+        "Laws 1957, c. 1, § 64, p. 78;",
+        "Laws 2015, LB159, § 1.",
+    ]
+    assert "Public Accountancy Act" in (records[2].body or "")
+    inventory = load_source_inventory(report.inventory_path)
+    assert inventory[-1].source_format == "nebraska-revised-statutes-html"
+    assert inventory[-1].source_path.endswith(
+        "/nebraska-revised-statutes-html/chapters/chapter-1-full.html"
+    )
+
+
+def test_nebraska_helpers_cover_defensive_paths():
+    chapters = _parse_nebraska_chapters(
+        b"""
+        <a href="/laws/browse-chapters.php?chapter=01">Chapter 1 ACCOUNTANTS</a>
+        <a href="/laws/browse-chapters.php?chapter=bad">Bad</a>
+        <a href="/laws/browse-chapters.php?chapter=01">Duplicate</a>
+        """
+    )
+    assert [chapter.num for chapter in chapters] == ["1"]
+    sibling_heading = _parse_nebraska_chapters(
+        b"""
+        <span><a href="/laws/browse-chapters.php?chapter=02">Chapter 2</a></span>
+        <span>AGRICULTURE</span>
+        """
+    )
+    assert sibling_heading[0].heading == "AGRICULTURE"
+    assert _nebraska_chapter_from_href("/laws/browse-chapters.php") is None
+    assert _nebraska_chapter_link_heading("Standalone heading", "1") == "Standalone heading"
+    assert _nebraska_chapter_filter(None) is None
+    assert _nebraska_chapter_filter("Chapter 01") == "1"
+    with pytest.raises(ValueError, match="invalid Nebraska chapter filter"):
+        _nebraska_chapter_filter("chapter one")
+
+    sections = _parse_nebraska_chapter_sections(SAMPLE_NEBRASKA_CHAPTER.encode(), chapter=chapters[0])
+    assert [section.section for section in sections] == ["1-101", "1-105"]
+    assert sections[0].status == "repealed"
+    assert sections[1].heading == "Act, how cited"
+    assert _nebraska_section_from_href("/laws/statutes.php?statute=01-105.01") == "1-105.01"
+    assert _nebraska_section_from_href("/laws/statutes.php?statute=77-27,187") == "77-27,187"
+    assert _nebraska_section_from_href("/laws/statutes.php") is None
+    assert _nebraska_href_to_citation_path("/laws/statutes.php?statute=1-171") == (
+        "us-ne/statute/1/1-171"
+    )
+    assert _nebraska_href_to_citation_path("/laws/not-statutes.php") is None
+    assert _nebraska_section_heading_parts("not a section") is None
+
+
+def test_nebraska_extraction_reports_source_errors(tmp_path):
+    source_dir = tmp_path / "missing-chapter"
+    root = source_dir / "nebraska-revised-statutes-html"
+    root.mkdir(parents=True)
+    (root / "index.html").write_text(SAMPLE_NEBRASKA_INDEX)
+
+    with pytest.raises(ValueError, match="no Nebraska Revised Statutes provisions extracted"):
+        extract_nebraska_revised_statutes(
+            CorpusArtifactStore(tmp_path / "corpus-missing-chapter"),
+            version="2026-05-04",
+            source_dir=source_dir,
+            only_title="1",
+        )
+
+    bad_section_dir = tmp_path / "bad-section"
+    _write_nebraska_fixture(bad_section_dir)
+    chapter_path = (
+        bad_section_dir / "nebraska-revised-statutes-html" / "chapters" / "chapter-1-full.html"
+    )
+    chapter_path.write_text("<html><body><div>No statutory sections.</div></body></html>")
+
+    report = extract_nebraska_revised_statutes(
+        CorpusArtifactStore(tmp_path / "corpus-bad-section"),
+        version="2026-05-04",
+        source_dir=bad_section_dir,
+        source_as_of="2026-05-04",
+        only_title="1",
+        limit=3,
+    )
+
+    assert report.section_count == 0
+    assert report.errors == ("chapter 1: no sections parsed",)
+
+
+def test_nebraska_live_source_helpers_cover_success_and_exhausted_retry(tmp_path, monkeypatch):
+    chapters = _parse_nebraska_chapters(SAMPLE_NEBRASKA_INDEX.encode())
+    source_dir = tmp_path / "source"
+    _write_nebraska_fixture(source_dir)
+    assert _load_nebraska_html(
+        object(),
+        source_dir,
+        None,
+        relative_name="nebraska-revised-statutes-html/chapters/chapter-1-full.html",
+        url=chapters[0].full_source_url,
+    ) == SAMPLE_NEBRASKA_CHAPTER.encode()
+
+    class Response:
+        status_code = 429
+        content = b"retry exhausted"
+        headers = {"Retry-After": "0"}
+
+        def raise_for_status(self):
+            return None
+
+    class Session:
+        def get(self, url, timeout):
+            del url, timeout
+            return Response()
+
+    content = _load_nebraska_html(
+        Session(),
+        None,
+        None,
+        relative_name="nebraska-revised-statutes-html/index.html",
+        url="https://example.test",
+    )
+    assert content == b"retry exhausted"
+
+
+def test_load_nebraska_html_downloads_and_retries(tmp_path, monkeypatch):
+    cached = tmp_path / "cached" / "nebraska-revised-statutes-html" / "index.html"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"<html>cached</html>")
+
+    assert _load_nebraska_html(
+        object(),
+        None,
+        tmp_path / "cached",
+        relative_name="nebraska-revised-statutes-html/index.html",
+        url="https://example.test",
+    ) == b"<html>cached</html>"
+
+    class Response:
+        def __init__(self, status_code, content=b"", headers=None):
+            self.status_code = status_code
+            self.content = content
+            self.headers = headers or {}
+
+        def raise_for_status(self):
+            if self.status_code >= 400 and self.status_code != 429:
+                raise requests.HTTPError(str(self.status_code))
+
+    class Session:
+        def __init__(self):
+            self.responses = [
+                Response(429, headers={"Retry-After": "0"}),
+                Response(200, b"<html>ok</html>"),
+            ]
+
+        def get(self, url, timeout):
+            del url, timeout
+            return self.responses.pop(0)
+
+    monkeypatch.setattr("axiom_corpus.corpus.states.time.sleep", lambda seconds: None)
+    content = _load_nebraska_html(
+        Session(),
+        None,
+        tmp_path,
+        relative_name="nebraska-revised-statutes-html/index.html",
+        url="https://example.test",
+    )
+
+    assert content == b"<html>ok</html>"
+    assert (tmp_path / "nebraska-revised-statutes-html" / "index.html").read_bytes() == content
+
+
 def test_extract_california_codes_bulk_writes_state_records(tmp_path):
     source_zip = tmp_path / "pubinfo_2025.zip"
     _write_california_bulk_fixture(source_zip)
@@ -951,6 +1230,31 @@ def test_extract_minnesota_statutes_cli_local_source(tmp_path, capsys):
     assert '"provisions_written": 4' in output
 
 
+def test_extract_nebraska_revised_statutes_cli_local_source(tmp_path, capsys):
+    source_dir = tmp_path / "nebraska"
+    _write_nebraska_fixture(source_dir)
+    base = tmp_path / "corpus"
+
+    exit_code = main(
+        [
+            "extract-nebraska-revised-statutes",
+            "--base",
+            str(base),
+            "--version",
+            "2026-05-04",
+            "--source-dir",
+            str(source_dir),
+            "--only-title",
+            "1",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert '"jurisdiction": "us-ne"' in output
+    assert '"provisions_written": 3' in output
+
+
 def test_extract_california_codes_cli_local_source(tmp_path, capsys):
     source_zip = tmp_path / "pubinfo_2025.zip"
     _write_california_bulk_fixture(source_zip)
@@ -974,6 +1278,294 @@ def test_extract_california_codes_cli_local_source(tmp_path, capsys):
     assert exit_code == 0
     assert '"jurisdiction": "us-ca"' in output
     assert '"provisions_written": 3' in output
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        (
+            "mgawebsite_Laws_StatuteText_article-GTG_section-10-105_enactments-false.html",
+            "gtg/10-105",
+        ),
+        ("code-of-alabama_section-1-1-1.1.html", "1-1-1.1"),
+        ("statutes.asp_01-05-006.html", "01.05.006"),
+        ("viewdocument_docName-www.azleg.gov_ars_20_00259.htm.html", "20-00259"),
+        ("statutes_cite_105.63.html", "105.63"),
+        ("RCW_default.aspx_cite-10.89.html", "10.89"),
+        ("document_statutes_100.52.html", "100.52"),
+        ("laws_statutes.php_statute-44-911_print-true.html", "44-911"),
+        ("Docs_AG_htm_AG.1.htm_1-001.html", "AG/1.001"),
+        ("statutes_13-A_title13-Ach0sec0.html.html", "13-A-0"),
+        ("Laws_GeneralLaws_PartI_TitleIX_Chapter62_Section2.html", "62-2"),
+        ("legislation_ilcs_fulltext.asp_DocName-003500050K201.html", "35-5-201"),
+        ("statutes_section_32_151_05828b.html", "32-151-5828b"),
+        ("xcode_Title59_Chapter10_C59-10-S104_1800010118000101.html", "59-10-104"),
+        ("Statutes_TITLE1_INDEX.HTM.html", "TITLE1"),
+        ("code_t02c003.php.html", "2-3"),
+        ("Legis_Laws_Toc.aspx_folder-1.html", "1"),
+        ("rsa_html_NHTOC_NHTOC-I.htm.html", "I"),
+        ("NRS_NRS-000.html.html", "000"),
+        ("statutes_consolidated_view-statute_txtType-HTM_ttl-10.html", "10"),
+        ("sec_custom.html", "custom"),
+    ],
+)
+def test_state_html_section_number_patterns(filename, expected):
+    assert _state_html_section_number(filename, "xx") == expected
+
+
+def test_state_html_parse_context_patterns():
+    base = {"html": "<html></html>", "source_url": "file:///tmp/source.html"}
+
+    tx = _state_html_parse_context("AG/1.001", state_code="tx", filename="", **base)
+    assert tx["code"] == "AG"
+    assert tx["section_number"] == "1.001"
+
+    me = _state_html_parse_context("13-A-0", state_code="me", filename="", **base)
+    assert me["title"] == "13-A"
+    assert me["section"] == "0"
+
+    ma = _state_html_parse_context("62-2", state_code="ma", filename="", **base)
+    assert ma["chapter"] == "62"
+    assert ma["section_number"] == "2"
+
+    md = _state_html_parse_context("gtg/10-105", state_code="md", filename="", **base)
+    assert md["article_code"] == "gtg"
+    assert md["section"] == "10-105"
+
+    il = _state_html_parse_context("35-5-201", state_code="il", filename="", **base)
+    assert il["chapter"] == 35
+    assert il["act"] == 5
+    assert il["section_number"] == "201"
+
+    vt = _state_html_parse_context("32-151-5828b", state_code="vt", filename="", **base)
+    assert vt["title"] == 32
+    assert vt["chapter"] == 151
+    assert vt["section"] == "5828b"
+
+    la = _state_html_parse_context("1", state_code="la", filename="", **base)
+    assert la["doc_id"] == 1
+
+    de = _state_html_parse_context(
+        "18-64",
+        state_code="de",
+        filename="title18_c064_index.html.html",
+        **base,
+    )
+    assert de["title"] == 18
+    assert de["chapter"] == 64
+
+    sc = _state_html_parse_context(
+        "2-3",
+        state_code="sc",
+        filename="code_t02c003.php.html",
+        **base,
+    )
+    assert sc["title"] == 2
+    assert sc["chapter"] == 3
+
+    or_context = _state_html_parse_context(
+        "316",
+        state_code="or",
+        filename="ors_316.html",
+        **base,
+    )
+    assert or_context["chapter"] == 316
+
+    ct = _state_html_parse_context(
+        "12A",
+        state_code="ct",
+        filename="chapter_12A.html",
+        **base,
+    )
+    assert ct["chapter"] == "12A"
+
+
+def _legacy_section(**overrides):
+    values = {
+        "citation": LegacyCitation(title=0, section="AL-40-18-1"),
+        "title_name": "Code of Alabama - Revenue and Taxation",
+        "section_title": "Definitions",
+        "text": "Definitions text.",
+        "source_url": "file:///tmp/source.html",
+        "retrieved_at": date(2026, 5, 4),
+        "uslm_id": "al/40/18/40-18-1",
+    }
+    values.update(overrides)
+    return LegacySection(**values)
+
+
+def test_state_html_helper_defensive_paths():
+    assert _date_text(date(2026, 5, 4), "fallback") == "2026-05-04"
+    assert _non_file_url("file:///tmp/source.html") is None
+    assert _non_file_url("https://example.test/source") == "https://example.test/source"
+
+    with pytest.raises(ValueError, match="unsupported local state HTML converter"):
+        _state_html_converter("zz")
+
+    with pytest.raises(ValueError, match="no supported local parse method"):
+        _parse_state_html_sections(
+            b"<html></html>",
+            filename="sec_1.html",
+            state_code="al",
+            converter=object(),
+            source_url="file:///tmp/source.html",
+        )
+
+    def parser(soup, html, optional="fallback"):
+        return soup, html, optional
+
+    parsed_args = _state_html_parse_args(parser, {"html": "<p>Text</p>"})
+    assert parsed_args[0].get_text() == "Text"
+    assert parsed_args[1:] == ["<p>Text</p>", "fallback"]
+
+    def bad_parser(required):
+        return required
+
+    with pytest.raises(ValueError, match="unsupported parser argument"):
+        _state_html_parse_args(bad_parser, {"html": ""})
+
+    section = _legacy_section()
+    assert _state_html_to_sections(object(), None, {}) == ()
+    assert _state_html_to_sections(object(), section, {}) == (section,)
+
+    class Converter:
+        def _to_section(self, parsed, title="ignored"):
+            return parsed
+
+    assert _state_html_to_sections(Converter(), {"one": section}, {}) == (section,)
+    assert _state_html_to_sections(Converter(), [section], {}) == (section,)
+
+    class NoToSection:
+        pass
+
+    with pytest.raises(ValueError, match="has no _to_section"):
+        _state_html_to_sections(NoToSection(), object(), {})
+
+    def converter_needs_missing(parsed, missing):
+        return parsed, missing
+
+    with pytest.raises(ValueError, match="unsupported converter argument"):
+        _state_html_to_section_args(converter_needs_missing, section, {})
+
+    for splitter, value in [
+        (_split_state_html_last_hyphen, "missing"),
+        (_split_state_html_prefixed_section, "missing"),
+        (_split_state_html_triplet, "missing"),
+    ]:
+        with pytest.raises(ValueError):
+            splitter(value, "xx")
+
+
+def test_state_html_identity_and_metadata_fallbacks():
+    identity = _state_html_section_identity(
+        _legacy_section(
+            citation=LegacyCitation(title=7, section="AL-Custom-1"),
+            uslm_id=None,
+        ),
+        "us-al",
+    )
+    assert identity.citation_path == "us-al/statute/7/custom-1"
+    assert identity.parent_citation_path == "us-al/statute/7"
+
+    no_title = _state_html_section_identity(
+        _legacy_section(
+            citation=LegacyCitation(title=0, section="??"),
+            uslm_id=None,
+        ),
+        "us-al",
+    )
+    assert no_title.citation_path == "us-al/statute/0"
+    assert no_title.parent_citation_path is None
+
+    metadata = _state_html_section_metadata(
+        _legacy_section(
+            effective_date=date(2026, 1, 1),
+            public_laws=["Act 1"],
+            references_to=["us-al/statute/40/40-18-2"],
+        ),
+        kind="section",
+    )
+    assert metadata["effective_date"] == "2026-01-01"
+    assert metadata["public_laws"] == ["Act 1"]
+    assert metadata["references_to"] == ["us-al/statute/40/40-18-2"]
+
+
+def test_extract_local_state_html_writes_source_first_records(tmp_path):
+    source_dir = tmp_path / "us-al"
+    source_dir.mkdir()
+    (source_dir / "code-of-alabama_section-40-18-1.html").write_text(SAMPLE_LOCAL_AL_HTML)
+    store = CorpusArtifactStore(tmp_path / "corpus")
+
+    report = extract_state_html_directory(
+        store,
+        jurisdiction="us-al",
+        version="2026-05-04-us-al-local-html-probe",
+        source_dir=source_dir,
+        source_as_of="2026-05-04",
+        expression_date="2026-05-04",
+    )
+
+    assert report.coverage.complete
+    assert report.title_count == 1
+    assert report.section_count == 1
+    records = load_provisions(report.provisions_path)
+    assert [record.citation_path for record in records] == [
+        "us-al/statute/40",
+        "us-al/statute/40/40-18-1",
+    ]
+    assert records[1].source_path.endswith(
+        "/state-html/us-al/code-of-alabama_section-40-18-1.html"
+    )
+    assert records[1].source_format == "local-state-html-snapshot"
+    inventory = load_source_inventory(report.inventory_path)
+    assert [item.citation_path for item in inventory] == [
+        "us-al/statute/40",
+        "us-al/statute/40/40-18-1",
+    ]
+
+
+def test_extract_state_statutes_manifest_supports_local_state_html(tmp_path, capsys):
+    source_dir = tmp_path / "us-al"
+    source_dir.mkdir()
+    (source_dir / "code-of-alabama_section-40-18-1.html").write_text(SAMPLE_LOCAL_AL_HTML)
+    manifest = tmp_path / "state-statutes.yaml"
+    manifest.write_text(
+        f"""
+version: "2026-05-04-local-html-smoke"
+sources:
+  - source_id: us-al-local-html
+    jurisdiction: us-al
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: {source_dir}
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+"""
+    )
+    base = tmp_path / "corpus"
+
+    exit_code = main(
+        [
+            "extract-state-statutes",
+            "--base",
+            str(base),
+            "--manifest",
+            str(manifest),
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert '"adapter": "local-state-html"' in output
+    assert '"coverage_complete": true' in output
+    records = load_provisions(
+        base / "provisions/us-al/statute/2026-05-04-local-html-smoke.jsonl"
+    )
+    assert [record.citation_path for record in records] == [
+        "us-al/statute/40",
+        "us-al/statute/40/40-18-1",
+    ]
 
 
 def test_extract_cic_state_html_cli(tmp_path, capsys):
