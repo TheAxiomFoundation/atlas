@@ -489,9 +489,12 @@ def _remote_document_paths(
 ) -> tuple[str, ...]:
     index = _remote_text(session, base_url)
     direct_links = [
-        link
-        for link in parse_illinois_ilcs_links(index)
-        if "/" in link and _document_path_matches(link, chapter_filter, act_filter)
+        normalized_link
+        for normalized_link in (
+            _ilcs_relative_href(link) for link in parse_illinois_ilcs_links(index)
+        )
+        if "/" in normalized_link
+        and _document_path_matches(normalized_link, chapter_filter, act_filter)
     ]
     if direct_links:
         return _limit_section_paths(direct_links, limit)
