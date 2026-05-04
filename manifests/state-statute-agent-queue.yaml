@@ -18,13 +18,14 @@ policy:
 status_counts:
   done: 2
   blocked_release_repair: 14
-  agent_ready: 35
+  implementation_started: 1
+  agent_ready: 34
 recommended_first_batch:
-  - us-il
   - us-in
   - us-mt
   - us-nv
   - us-or
+  - us-ar
 states:
   - jurisdiction: us-ne
     name: Nebraska
@@ -142,11 +143,11 @@ states:
 
   - jurisdiction: us-il
     name: Illinois
-    queue_status: agent_ready
+    queue_status: implementation_started
     production_status: supabase_only_legacy
     supabase_count: 72155
     priority: 1
-    notes: Large legacy corpus; discover current official primary source and build source-first adapter.
+    notes: Source-first adapter prototype exists; needs full run, review, release promotion, R2, and Supabase publication.
   - jurisdiction: us-in
     name: Indiana
     queue_status: agent_ready

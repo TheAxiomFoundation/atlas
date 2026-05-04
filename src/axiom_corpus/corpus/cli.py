@@ -37,6 +37,7 @@ from axiom_corpus.corpus.r2 import (
 )
 from axiom_corpus.corpus.release_quality import validate_release
 from axiom_corpus.corpus.releases import ReleaseManifest, resolve_release_manifest_path
+from axiom_corpus.corpus.state_adapters.illinois import extract_illinois_ilcs
 from axiom_corpus.corpus.state_statute_completion import (
     build_state_statute_completion_report,
 )
@@ -682,6 +683,34 @@ def _cmd_extract_washington_rcw(args: argparse.Namespace) -> int:
     return 0 if report.coverage.complete or args.allow_incomplete else 2
 
 
+def _cmd_extract_illinois_ilcs(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_illinois_ilcs(
+        store,
+        version=args.version,
+        source_dir=args.source_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_chapter=args.only_chapter,
+        only_act=args.only_act,
+        limit=args.limit,
+    )
+    print(
+        json.dumps(
+            _state_statute_report_payload(
+                report,
+                source_id="us-il-ilcs",
+                adapter="illinois-ilcs",
+                version=args.version,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
 def _cmd_extract_california_codes_bulk(args: argparse.Namespace) -> int:
     store = CorpusArtifactStore(args.base)
     expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
@@ -937,6 +966,16 @@ def _extract_state_statute_source(
             workers=_optional_int(options.get("workers")) or 4,
             download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
         )
+    if adapter == "illinois-ilcs":
+        return extract_illinois_ilcs(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_chapter=only_title,
+            limit=limit,
+        )
     if adapter == "california-codes-bulk":
         return extract_california_codes_bulk(
             store,
@@ -1053,6 +1092,10 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "washington-rcw": "washington-rcw",
         "rcw": "washington-rcw",
         "wa": "washington-rcw",
+        "il": "illinois-ilcs",
+        "ilcs": "illinois-ilcs",
+        "illinois": "illinois-ilcs",
+        "illinois-ilcs": "illinois-ilcs",
         "ca": "california-codes-bulk",
         "california": "california-codes-bulk",
         "california-codes": "california-codes-bulk",
@@ -1095,6 +1138,7 @@ def _state_statute_source_path_for_plan(
         "ohio-revised-code",
         "texas-tcas",
         "washington-rcw",
+        "illinois-ilcs",
     }:
         return _optional_manifest_path(manifest_path, options, "source_dir")
     if adapter == "california-codes-bulk":
@@ -1641,6 +1685,21 @@ def build_parser() -> argparse.ArgumentParser:
     extract_washington_rcw_cmd.add_argument("--workers", type=int, default=4)
     extract_washington_rcw_cmd.add_argument("--allow-incomplete", action="store_true")
     extract_washington_rcw_cmd.set_defaults(func=_cmd_extract_washington_rcw)
+
+    extract_illinois_ilcs_cmd = sub.add_parser(
+        "extract-illinois-ilcs",
+        help="Snapshot official Illinois ILCS FTP HTML.",
+    )
+    extract_illinois_ilcs_cmd.add_argument("--base", type=Path, required=True)
+    extract_illinois_ilcs_cmd.add_argument("--version", required=True)
+    extract_illinois_ilcs_cmd.add_argument("--source-dir", type=Path)
+    extract_illinois_ilcs_cmd.add_argument("--only-chapter")
+    extract_illinois_ilcs_cmd.add_argument("--only-act")
+    extract_illinois_ilcs_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_illinois_ilcs_cmd.add_argument("--expression-date")
+    extract_illinois_ilcs_cmd.add_argument("--limit", type=int)
+    extract_illinois_ilcs_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_illinois_ilcs_cmd.set_defaults(func=_cmd_extract_illinois_ilcs)
 
     extract_california_codes_cmd = sub.add_parser(
         "extract-california-codes",
