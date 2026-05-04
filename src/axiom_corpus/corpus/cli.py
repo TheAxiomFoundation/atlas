@@ -49,6 +49,7 @@ from axiom_corpus.corpus.states import (
     extract_dc_code,
     extract_minnesota_statutes,
     extract_ohio_revised_code,
+    extract_state_html_directory,
     extract_texas_tcas,
 )
 from axiom_corpus.corpus.supabase import (
@@ -789,6 +790,17 @@ def _extract_state_statute_source(
             only_title=only_title,
             limit=limit,
         )
+    if adapter == "local-state-html":
+        return extract_state_html_directory(
+            store,
+            jurisdiction=source.jurisdiction,
+            version=version,
+            source_dir=_required_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+        )
     if adapter == "texas-tcas":
         return extract_texas_tcas(
             store,
@@ -849,7 +861,7 @@ def _state_statute_plan_payload(
 ) -> dict[str, Any]:
     options = _state_source_options(source)
     adapter = _canonical_state_statute_adapter(source.adapter)
-    path_key = "source_dir" if adapter == "dc-code" else "release_dir"
+    path_key = "source_dir" if adapter in {"dc-code", "local-state-html"} else "release_dir"
     source_path = _state_statute_source_path_for_plan(
         adapter,
         manifest_path=manifest_path,
@@ -920,6 +932,10 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "cic-state-code-html": "cic-html",
         "cic-odt": "cic-odt",
         "cic-state-code-odt": "cic-odt",
+        "state-html": "local-state-html",
+        "state-html-directory": "local-state-html",
+        "local-state-html": "local-state-html",
+        "legacy-state-html": "local-state-html",
         "colorado-docx": "colorado-docx",
         "colorado-crs-docx": "colorado-docx",
         "ohio": "ohio-revised-code",
@@ -968,6 +984,8 @@ def _state_statute_source_path_for_plan(
         return _optional_manifest_path(manifest_path, options, "source_dir")
     if adapter == "california-codes-bulk":
         return _optional_manifest_path(manifest_path, options, "source_zip")
+    if adapter == "local-state-html":
+        return _required_manifest_path(manifest_path, options, "source_dir")
     return _required_manifest_path(manifest_path, options, path_key)
 
 

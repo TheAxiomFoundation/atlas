@@ -1,0 +1,121 @@
+version: "2026-05-04-local-html-smoke"
+sources:
+  - source_id: us-al-local-html
+    jurisdiction: us-al
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-al
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot
+
+  - source_id: us-az-local-html
+    jurisdiction: us-az
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-az
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot
+
+  - source_id: us-de-local-html
+    jurisdiction: us-de
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-de
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot
+
+  - source_id: us-la-local-html
+    jurisdiction: us-la
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-la
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot
+
+  - source_id: us-me-local-html
+    jurisdiction: us-me
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-me
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot
+
+  - source_id: us-ne-local-html
+    jurisdiction: us-ne
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-ne
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot
+
+  - source_id: us-nh-local-html
+    jurisdiction: us-nh
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-nh
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot
+
+  - source_id: us-sc-local-html
+    jurisdiction: us-sc
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-sc
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot
+
+  - source_id: us-wa-local-html
+    jurisdiction: us-wa
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-wa
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot
+
+  - source_id: us-wi-local-html
+    jurisdiction: us-wi
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: ../data/statutes/us-wi
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+      limit: 25
+    metadata:
+      source_authority: Cached official state HTML snapshot

@@ -1,10 +1,27 @@
 import zipfile
+from datetime import date
 from xml.sax.saxutils import escape
+
+import pytest
 
 from axiom_corpus.corpus.artifacts import CorpusArtifactStore
 from axiom_corpus.corpus.cli import main
 from axiom_corpus.corpus.io import load_provisions, load_source_inventory
 from axiom_corpus.corpus.states import (
+    _date_text,
+    _non_file_url,
+    _parse_state_html_sections,
+    _split_state_html_last_hyphen,
+    _split_state_html_prefixed_section,
+    _split_state_html_triplet,
+    _state_html_converter,
+    _state_html_parse_args,
+    _state_html_parse_context,
+    _state_html_section_identity,
+    _state_html_section_metadata,
+    _state_html_section_number,
+    _state_html_to_section_args,
+    _state_html_to_sections,
     extract_california_codes_bulk,
     extract_cic_html_release,
     extract_cic_odt_release,
@@ -12,9 +29,12 @@ from axiom_corpus.corpus.states import (
     extract_dc_code,
     extract_minnesota_statutes,
     extract_ohio_revised_code,
+    extract_state_html_directory,
     extract_texas_tcas,
     state_run_id,
 )
+from axiom_corpus.models import Citation as LegacyCitation
+from axiom_corpus.models import Section as LegacySection
 
 SAMPLE_DC_INDEX = """<?xml version="1.0" encoding="utf-8"?>
 <container xmlns="https://code.dccouncil.us/schemas/dc-library"
@@ -63,6 +83,25 @@ SAMPLE_CIC_HTML = """<!DOCTYPE html>
       </div>
     </div>
   </main>
+</body>
+</html>
+"""
+
+SAMPLE_LOCAL_AL_HTML = """<!DOCTYPE html>
+<html>
+<head><title>Code of Alabama 40-18-1</title></head>
+<body>
+<h1>Code of Alabama 1975</h1>
+<h2>Title 40 - Revenue and Taxation</h2>
+<h3>Chapter 18 - Income Tax</h3>
+<div class="content">
+<p><b>Section 40-18-1 Definitions.</b></p>
+<p>For the purpose of this chapter, the following terms shall have the meanings
+respectively ascribed to them by this section:</p>
+<p>(1) PERSON. Includes an individual, trust, estate, partnership, corporation,
+or other entity.</p>
+<p>(Acts 1935, No. 194, p. 256.)</p>
+</div>
 </body>
 </html>
 """
@@ -974,6 +1013,294 @@ def test_extract_california_codes_cli_local_source(tmp_path, capsys):
     assert exit_code == 0
     assert '"jurisdiction": "us-ca"' in output
     assert '"provisions_written": 3' in output
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        (
+            "mgawebsite_Laws_StatuteText_article-GTG_section-10-105_enactments-false.html",
+            "gtg/10-105",
+        ),
+        ("code-of-alabama_section-1-1-1.1.html", "1-1-1.1"),
+        ("statutes.asp_01-05-006.html", "01.05.006"),
+        ("viewdocument_docName-www.azleg.gov_ars_20_00259.htm.html", "20-00259"),
+        ("statutes_cite_105.63.html", "105.63"),
+        ("RCW_default.aspx_cite-10.89.html", "10.89"),
+        ("document_statutes_100.52.html", "100.52"),
+        ("laws_statutes.php_statute-44-911_print-true.html", "44-911"),
+        ("Docs_AG_htm_AG.1.htm_1-001.html", "AG/1.001"),
+        ("statutes_13-A_title13-Ach0sec0.html.html", "13-A-0"),
+        ("Laws_GeneralLaws_PartI_TitleIX_Chapter62_Section2.html", "62-2"),
+        ("legislation_ilcs_fulltext.asp_DocName-003500050K201.html", "35-5-201"),
+        ("statutes_section_32_151_05828b.html", "32-151-5828b"),
+        ("xcode_Title59_Chapter10_C59-10-S104_1800010118000101.html", "59-10-104"),
+        ("Statutes_TITLE1_INDEX.HTM.html", "TITLE1"),
+        ("code_t02c003.php.html", "2-3"),
+        ("Legis_Laws_Toc.aspx_folder-1.html", "1"),
+        ("rsa_html_NHTOC_NHTOC-I.htm.html", "I"),
+        ("NRS_NRS-000.html.html", "000"),
+        ("statutes_consolidated_view-statute_txtType-HTM_ttl-10.html", "10"),
+        ("sec_custom.html", "custom"),
+    ],
+)
+def test_state_html_section_number_patterns(filename, expected):
+    assert _state_html_section_number(filename, "xx") == expected
+
+
+def test_state_html_parse_context_patterns():
+    base = {"html": "<html></html>", "source_url": "file:///tmp/source.html"}
+
+    tx = _state_html_parse_context("AG/1.001", state_code="tx", filename="", **base)
+    assert tx["code"] == "AG"
+    assert tx["section_number"] == "1.001"
+
+    me = _state_html_parse_context("13-A-0", state_code="me", filename="", **base)
+    assert me["title"] == "13-A"
+    assert me["section"] == "0"
+
+    ma = _state_html_parse_context("62-2", state_code="ma", filename="", **base)
+    assert ma["chapter"] == "62"
+    assert ma["section_number"] == "2"
+
+    md = _state_html_parse_context("gtg/10-105", state_code="md", filename="", **base)
+    assert md["article_code"] == "gtg"
+    assert md["section"] == "10-105"
+
+    il = _state_html_parse_context("35-5-201", state_code="il", filename="", **base)
+    assert il["chapter"] == 35
+    assert il["act"] == 5
+    assert il["section_number"] == "201"
+
+    vt = _state_html_parse_context("32-151-5828b", state_code="vt", filename="", **base)
+    assert vt["title"] == 32
+    assert vt["chapter"] == 151
+    assert vt["section"] == "5828b"
+
+    la = _state_html_parse_context("1", state_code="la", filename="", **base)
+    assert la["doc_id"] == 1
+
+    de = _state_html_parse_context(
+        "18-64",
+        state_code="de",
+        filename="title18_c064_index.html.html",
+        **base,
+    )
+    assert de["title"] == 18
+    assert de["chapter"] == 64
+
+    sc = _state_html_parse_context(
+        "2-3",
+        state_code="sc",
+        filename="code_t02c003.php.html",
+        **base,
+    )
+    assert sc["title"] == 2
+    assert sc["chapter"] == 3
+
+    or_context = _state_html_parse_context(
+        "316",
+        state_code="or",
+        filename="ors_316.html",
+        **base,
+    )
+    assert or_context["chapter"] == 316
+
+    ct = _state_html_parse_context(
+        "12A",
+        state_code="ct",
+        filename="chapter_12A.html",
+        **base,
+    )
+    assert ct["chapter"] == "12A"
+
+
+def _legacy_section(**overrides):
+    values = {
+        "citation": LegacyCitation(title=0, section="AL-40-18-1"),
+        "title_name": "Code of Alabama - Revenue and Taxation",
+        "section_title": "Definitions",
+        "text": "Definitions text.",
+        "source_url": "file:///tmp/source.html",
+        "retrieved_at": date(2026, 5, 4),
+        "uslm_id": "al/40/18/40-18-1",
+    }
+    values.update(overrides)
+    return LegacySection(**values)
+
+
+def test_state_html_helper_defensive_paths():
+    assert _date_text(date(2026, 5, 4), "fallback") == "2026-05-04"
+    assert _non_file_url("file:///tmp/source.html") is None
+    assert _non_file_url("https://example.test/source") == "https://example.test/source"
+
+    with pytest.raises(ValueError, match="unsupported local state HTML converter"):
+        _state_html_converter("zz")
+
+    with pytest.raises(ValueError, match="no supported local parse method"):
+        _parse_state_html_sections(
+            b"<html></html>",
+            filename="sec_1.html",
+            state_code="al",
+            converter=object(),
+            source_url="file:///tmp/source.html",
+        )
+
+    def parser(soup, html, optional="fallback"):
+        return soup, html, optional
+
+    parsed_args = _state_html_parse_args(parser, {"html": "<p>Text</p>"})
+    assert parsed_args[0].get_text() == "Text"
+    assert parsed_args[1:] == ["<p>Text</p>", "fallback"]
+
+    def bad_parser(required):
+        return required
+
+    with pytest.raises(ValueError, match="unsupported parser argument"):
+        _state_html_parse_args(bad_parser, {"html": ""})
+
+    section = _legacy_section()
+    assert _state_html_to_sections(object(), None, {}) == ()
+    assert _state_html_to_sections(object(), section, {}) == (section,)
+
+    class Converter:
+        def _to_section(self, parsed, title="ignored"):
+            return parsed
+
+    assert _state_html_to_sections(Converter(), {"one": section}, {}) == (section,)
+    assert _state_html_to_sections(Converter(), [section], {}) == (section,)
+
+    class NoToSection:
+        pass
+
+    with pytest.raises(ValueError, match="has no _to_section"):
+        _state_html_to_sections(NoToSection(), object(), {})
+
+    def converter_needs_missing(parsed, missing):
+        return parsed, missing
+
+    with pytest.raises(ValueError, match="unsupported converter argument"):
+        _state_html_to_section_args(converter_needs_missing, section, {})
+
+    for splitter, value in [
+        (_split_state_html_last_hyphen, "missing"),
+        (_split_state_html_prefixed_section, "missing"),
+        (_split_state_html_triplet, "missing"),
+    ]:
+        with pytest.raises(ValueError):
+            splitter(value, "xx")
+
+
+def test_state_html_identity_and_metadata_fallbacks():
+    identity = _state_html_section_identity(
+        _legacy_section(
+            citation=LegacyCitation(title=7, section="AL-Custom-1"),
+            uslm_id=None,
+        ),
+        "us-al",
+    )
+    assert identity.citation_path == "us-al/statute/7/custom-1"
+    assert identity.parent_citation_path == "us-al/statute/7"
+
+    no_title = _state_html_section_identity(
+        _legacy_section(
+            citation=LegacyCitation(title=0, section="??"),
+            uslm_id=None,
+        ),
+        "us-al",
+    )
+    assert no_title.citation_path == "us-al/statute/0"
+    assert no_title.parent_citation_path is None
+
+    metadata = _state_html_section_metadata(
+        _legacy_section(
+            effective_date=date(2026, 1, 1),
+            public_laws=["Act 1"],
+            references_to=["us-al/statute/40/40-18-2"],
+        ),
+        kind="section",
+    )
+    assert metadata["effective_date"] == "2026-01-01"
+    assert metadata["public_laws"] == ["Act 1"]
+    assert metadata["references_to"] == ["us-al/statute/40/40-18-2"]
+
+
+def test_extract_local_state_html_writes_source_first_records(tmp_path):
+    source_dir = tmp_path / "us-al"
+    source_dir.mkdir()
+    (source_dir / "code-of-alabama_section-40-18-1.html").write_text(SAMPLE_LOCAL_AL_HTML)
+    store = CorpusArtifactStore(tmp_path / "corpus")
+
+    report = extract_state_html_directory(
+        store,
+        jurisdiction="us-al",
+        version="2026-05-04-us-al-local-html-probe",
+        source_dir=source_dir,
+        source_as_of="2026-05-04",
+        expression_date="2026-05-04",
+    )
+
+    assert report.coverage.complete
+    assert report.title_count == 1
+    assert report.section_count == 1
+    records = load_provisions(report.provisions_path)
+    assert [record.citation_path for record in records] == [
+        "us-al/statute/40",
+        "us-al/statute/40/40-18-1",
+    ]
+    assert records[1].source_path.endswith(
+        "/state-html/us-al/code-of-alabama_section-40-18-1.html"
+    )
+    assert records[1].source_format == "local-state-html-snapshot"
+    inventory = load_source_inventory(report.inventory_path)
+    assert [item.citation_path for item in inventory] == [
+        "us-al/statute/40",
+        "us-al/statute/40/40-18-1",
+    ]
+
+
+def test_extract_state_statutes_manifest_supports_local_state_html(tmp_path, capsys):
+    source_dir = tmp_path / "us-al"
+    source_dir.mkdir()
+    (source_dir / "code-of-alabama_section-40-18-1.html").write_text(SAMPLE_LOCAL_AL_HTML)
+    manifest = tmp_path / "state-statutes.yaml"
+    manifest.write_text(
+        f"""
+version: "2026-05-04-local-html-smoke"
+sources:
+  - source_id: us-al-local-html
+    jurisdiction: us-al
+    document_class: statute
+    adapter: local-state-html
+    options:
+      source_dir: {source_dir}
+      source_as_of: "2026-05-04"
+      expression_date: "2026-05-04"
+"""
+    )
+    base = tmp_path / "corpus"
+
+    exit_code = main(
+        [
+            "extract-state-statutes",
+            "--base",
+            str(base),
+            "--manifest",
+            str(manifest),
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert '"adapter": "local-state-html"' in output
+    assert '"coverage_complete": true' in output
+    records = load_provisions(
+        base / "provisions/us-al/statute/2026-05-04-local-html-smoke.jsonl"
+    )
+    assert [record.citation_path for record in records] == [
+        "us-al/statute/40",
+        "us-al/statute/40/40-18-1",
+    ]
 
 
 def test_extract_cic_state_html_cli(tmp_path, capsys):

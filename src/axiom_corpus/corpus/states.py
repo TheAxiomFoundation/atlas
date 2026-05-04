@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import importlib
+import inspect
 import json
 import re
 import time
@@ -27,6 +29,7 @@ from axiom_corpus.corpus.artifacts import CorpusArtifactStore, sha256_bytes
 from axiom_corpus.corpus.coverage import ProvisionCoverageReport, compare_provision_coverage
 from axiom_corpus.corpus.models import DocumentClass, ProvisionRecord, SourceInventoryItem
 from axiom_corpus.corpus.supabase import deterministic_provision_id
+from axiom_corpus.models import Section
 
 DC_CODE_WEB_BASE = "https://code.dccouncil.gov/us/dc/council/code"
 DC_CODE_REPO_BASE = "https://github.com/dccouncil/law-xml-codified"
@@ -49,6 +52,7 @@ TEXAS_TCAS_RESOURCE_BASE = "https://tcss.legis.texas.gov/resources"
 TEXAS_TCAS_TREE_SOURCE_FORMAT = "texas-tcas-json"
 TEXAS_TCAS_HTML_SOURCE_FORMAT = "texas-tcas-html"
 TEXAS_USER_AGENT = "axiom-corpus/0.1"
+LOCAL_STATE_HTML_SOURCE_FORMAT = "local-state-html-snapshot"
 ODT_TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
 WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 PRIMARY_CIC_ODT_PREFIXES = {
@@ -59,6 +63,50 @@ PRIMARY_CIC_ODT_PREFIXES = {
     "us-va": "gov.va.code",
     "us-vt": "gov.vt.vsa",
     "us-wy": "gov.wy.code",
+}
+STATE_HTML_CONVERTER_MODULES = {
+    "ak": "axiom_corpus.converters.us_states.ak",
+    "al": "axiom_corpus.converters.us_states.al",
+    "ar": "axiom_corpus.converters.us_states.ar",
+    "az": "axiom_corpus.converters.us_states.az",
+    "ct": "axiom_corpus.converters.us_states.ct",
+    "de": "axiom_corpus.converters.us_states.de",
+    "fl": "axiom_corpus.converters.us_states.fl",
+    "ga": "axiom_corpus.converters.us_states.ga",
+    "hi": "axiom_corpus.converters.us_states.hi",
+    "id": "axiom_corpus.converters.us_states.id_",
+    "il": "axiom_corpus.converters.us_states.il",
+    "in": "axiom_corpus.converters.us_states.in_",
+    "ks": "axiom_corpus.converters.us_states.ks",
+    "la": "axiom_corpus.converters.us_states.la",
+    "ma": "axiom_corpus.converters.us_states.ma",
+    "md": "axiom_corpus.converters.us_states.md",
+    "me": "axiom_corpus.converters.us_states.me",
+    "mn": "axiom_corpus.converters.us_states.mn",
+    "mo": "axiom_corpus.converters.us_states.mo",
+    "ms": "axiom_corpus.converters.us_states.ms",
+    "mt": "axiom_corpus.converters.us_states.mt",
+    "nc": "axiom_corpus.converters.us_states.nc",
+    "ne": "axiom_corpus.converters.us_states.ne",
+    "nh": "axiom_corpus.converters.us_states.nh",
+    "nj": "axiom_corpus.converters.us_states.nj",
+    "nm": "axiom_corpus.converters.us_states.nm",
+    "nv": "axiom_corpus.converters.us_states.nv",
+    "oh": "axiom_corpus.converters.us_states.oh",
+    "ok": "axiom_corpus.converters.us_states.ok",
+    "or": "axiom_corpus.converters.us_states.or_",
+    "ri": "axiom_corpus.converters.us_states.ri",
+    "sc": "axiom_corpus.converters.us_states.sc",
+    "sd": "axiom_corpus.converters.us_states.sd",
+    "tn": "axiom_corpus.converters.us_states.tn",
+    "tx": "axiom_corpus.converters.us_states.tx",
+    "ut": "axiom_corpus.converters.us_states.ut",
+    "va": "axiom_corpus.converters.us_states.va",
+    "vt": "axiom_corpus.converters.us_states.vt",
+    "wa": "axiom_corpus.converters.us_states.wa",
+    "wi": "axiom_corpus.converters.us_states.wi",
+    "wv": "axiom_corpus.converters.us_states.wv",
+    "wy": "axiom_corpus.converters.us_states.wy",
 }
 
 
@@ -411,6 +459,14 @@ class _TexasSection:
         return f"us-tx/statute/{_texas_code_token(self.code)}/{self.section}{suffix}"
 
 
+@dataclass(frozen=True)
+class _StateHtmlSectionIdentity:
+    title: str | None
+    section: str
+    citation_path: str
+    parent_citation_path: str | None
+
+
 def state_run_id(
     version: str,
     *,
@@ -427,6 +483,176 @@ def state_run_id(
     if limit is not None:
         parts.append(f"limit-{limit}")
     return "-".join(parts)
+
+
+def extract_state_html_directory(
+    store: CorpusArtifactStore,
+    *,
+    jurisdiction: str,
+    version: str,
+    source_dir: str | Path,
+    source_as_of: str | None = None,
+    expression_date: date | str | None = None,
+    only_title: str | None = None,
+    limit: int | None = None,
+) -> StateStatuteExtractReport:
+    """Snapshot local official-state HTML and extract source-first provisions.
+
+    This adapter migrates existing official HTML snapshots into the corpus
+    artifact contract. It intentionally writes source snapshots, inventory,
+    normalized provisions, and coverage instead of legacy rules rows.
+    """
+    source_root = Path(source_dir)
+    if not source_root.exists():
+        raise ValueError(f"state HTML source directory does not exist: {source_root}")
+    if not jurisdiction.startswith("us-") or len(jurisdiction) < 5:
+        raise ValueError(f"state HTML jurisdiction must be a state id: {jurisdiction}")
+    state_code = jurisdiction.removeprefix("us-")
+    converter = _state_html_converter(state_code)
+    only_title_token = _clean_path_token(only_title) if only_title is not None else None
+    run_id = (
+        state_run_id(version, jurisdiction=jurisdiction, only_title=only_title_token, limit=limit)
+        if only_title_token or limit is not None
+        else version
+    )
+    source_as_of_text = source_as_of or version
+    expression_date_text = _date_text(expression_date, source_as_of_text)
+
+    items_by_path: dict[str, SourceInventoryItem] = {}
+    records_by_path: dict[str, ProvisionRecord] = {}
+    source_paths: list[Path] = []
+    title_count = 0
+    section_count = 0
+    skipped_source_count = 0
+    errors: list[str] = []
+    remaining = limit
+
+    html_paths = sorted(path for path in source_root.rglob("*.html") if path.is_file())
+    for html_path in html_paths:
+        if remaining is not None and remaining <= 0:
+            break
+        relative_input = html_path.relative_to(source_root).as_posix()
+        html_bytes = html_path.read_bytes()
+        relative = f"state-html/{source_root.name}/{relative_input}"
+        artifact_path = store.source_path(jurisdiction, DocumentClass.STATUTE, run_id, relative)
+        source_sha256 = store.write_bytes(artifact_path, html_bytes)
+        source_paths.append(artifact_path)
+        source_key = _state_source_key(jurisdiction, run_id, relative)
+        source_url = f"file://{html_path}"
+
+        try:
+            sections = _parse_state_html_sections(
+                html_bytes,
+                filename=html_path.name,
+                state_code=state_code,
+                converter=converter,
+                source_url=source_url,
+            )
+        except Exception as exc:  # noqa: BLE001 - keep batch extraction moving.
+            skipped_source_count += 1
+            errors.append(f"{relative_input}: {exc}")
+            continue
+
+        if not sections:
+            skipped_source_count += 1
+            continue
+
+        for section in sections:
+            if remaining is not None and remaining <= 0:
+                break
+            identity = _state_html_section_identity(section, jurisdiction)
+            if only_title_token and _clean_path_token(identity.title or "") != only_title_token:
+                continue
+            if identity.parent_citation_path and identity.parent_citation_path not in records_by_path:
+                title_record = _state_html_title_record(
+                    section,
+                    identity=identity,
+                    jurisdiction=jurisdiction,
+                    version=run_id,
+                    source_path=source_key,
+                    source_format=LOCAL_STATE_HTML_SOURCE_FORMAT,
+                    source_as_of=source_as_of_text,
+                    expression_date=expression_date_text,
+                )
+                records_by_path[title_record.citation_path] = title_record
+                items_by_path[title_record.citation_path] = SourceInventoryItem(
+                    citation_path=title_record.citation_path,
+                    source_url=_non_file_url(section.source_url),
+                    source_path=source_key,
+                    source_format=LOCAL_STATE_HTML_SOURCE_FORMAT,
+                    sha256=source_sha256,
+                    metadata={
+                        "kind": "title",
+                        "heading": title_record.heading,
+                        "source_id": section.uslm_id,
+                        "file_name": relative_input,
+                    },
+                )
+                title_count += 1
+
+            record = _state_html_section_record(
+                section,
+                identity=identity,
+                jurisdiction=jurisdiction,
+                version=run_id,
+                source_path=source_key,
+                source_format=LOCAL_STATE_HTML_SOURCE_FORMAT,
+                source_as_of=source_as_of_text,
+                expression_date=expression_date_text,
+            )
+            if record.citation_path not in records_by_path:
+                records_by_path[record.citation_path] = record
+                items_by_path[record.citation_path] = SourceInventoryItem(
+                    citation_path=record.citation_path,
+                    source_url=_non_file_url(section.source_url),
+                    source_path=source_key,
+                    source_format=LOCAL_STATE_HTML_SOURCE_FORMAT,
+                    sha256=source_sha256,
+                    metadata={
+                        "kind": "section",
+                        "heading": record.heading,
+                        "source_id": section.uslm_id,
+                        "file_name": relative_input,
+                    },
+                )
+                section_count += 1
+                if remaining is not None:
+                    remaining -= 1
+
+    if not records_by_path:
+        detail = "; ".join(errors[:5])
+        suffix = f"; first errors: {detail}" if detail else ""
+        raise ValueError(f"no state HTML provisions extracted from {source_root}{suffix}")
+
+    items = tuple(items_by_path.values())
+    records = tuple(records_by_path.values())
+    inventory_path = store.inventory_path(jurisdiction, DocumentClass.STATUTE, run_id)
+    store.write_inventory(inventory_path, items)
+    provisions_path = store.provisions_path(jurisdiction, DocumentClass.STATUTE, run_id)
+    store.write_provisions(provisions_path, records)
+    coverage = compare_provision_coverage(
+        items,
+        records,
+        jurisdiction=jurisdiction,
+        document_class=DocumentClass.STATUTE.value,
+        version=run_id,
+    )
+    coverage_path = store.coverage_path(jurisdiction, DocumentClass.STATUTE, run_id)
+    store.write_json(coverage_path, coverage.to_mapping())
+    return StateStatuteExtractReport(
+        jurisdiction=jurisdiction,
+        title_count=title_count,
+        container_count=title_count,
+        section_count=section_count,
+        provisions_written=len(records),
+        inventory_path=inventory_path,
+        provisions_path=provisions_path,
+        coverage_path=coverage_path,
+        coverage=coverage,
+        source_paths=tuple(source_paths),
+        skipped_source_count=skipped_source_count,
+        errors=tuple(errors),
+    )
 
 
 def extract_colorado_docx_release(
@@ -5504,6 +5730,454 @@ def _date_text(value: date | str | None, fallback: str) -> str:
         return fallback
     if isinstance(value, date):
         return value.isoformat()
+    return value
+
+
+def _state_html_converter(state_code: str) -> Any:
+    module_path = STATE_HTML_CONVERTER_MODULES.get(state_code)
+    if module_path is None:
+        raise ValueError(f"unsupported local state HTML converter: {state_code}")
+    module = importlib.import_module(module_path)
+    class_name = f"{state_code.upper()}Converter"
+    if hasattr(module, class_name):
+        return getattr(module, class_name)()
+    for name in dir(module):
+        if name.endswith("Converter") and name != "Converter":
+            return getattr(module, name)()
+    raise ValueError(f"no state HTML converter class found in {module_path}")
+
+
+def _parse_state_html_sections(
+    html_bytes: bytes,
+    *,
+    filename: str,
+    state_code: str,
+    converter: Any,
+    source_url: str,
+) -> tuple[Section, ...]:
+    html = html_bytes.decode("utf-8", errors="replace")
+    section_number = _state_html_section_number(filename, state_code)
+    context = _state_html_parse_context(
+        section_number,
+        state_code=state_code,
+        filename=filename,
+        html=html,
+        source_url=source_url,
+    )
+    for method_name in (
+        "_parse_section_html",
+        "_parse_section_from_soup",
+        "_parse_chapter_html",
+    ):
+        if not hasattr(converter, method_name):
+            continue
+        method = getattr(converter, method_name)
+        args = _state_html_parse_args(method, context)
+        parsed = method(*args)
+        return _state_html_to_sections(converter, parsed, context)
+    raise ValueError(f"{type(converter).__name__} has no supported local parse method")
+
+
+def _state_html_section_number(filename: str, state_code: str) -> str:
+    if "StatuteText" in filename and "article-" in filename and "section-" in filename:
+        match = re.search(r"article-([A-Za-z]+)_section-([^_]+)", filename)
+        if match:
+            return f"{match.group(1).lower()}/{match.group(2)}"
+    if "section-" in filename:
+        match = re.search(r"section-(.+?)\.html$", filename)
+        if match:
+            return match.group(1)
+    if "statutes.asp_" in filename:
+        match = re.search(r"statutes\.asp_(.+?)\.html$", filename)
+        if match:
+            return match.group(1).replace("-", ".")
+    if "_ars_" in filename:
+        match = re.search(r"_ars_(\d+_\d+[-\d]*)\.htm", filename)
+        if match:
+            return match.group(1).replace("_", "-")
+    if "statutes_cite_" in filename:
+        match = re.search(r"statutes_cite_(.+?)\.html$", filename)
+        if match:
+            return match.group(1)
+    if "_cite-" in filename:
+        match = re.search(r"_cite-(.+?)\.html$", filename)
+        if match:
+            return match.group(1)
+    if "document_statutes_" in filename:
+        match = re.search(r"document_statutes_(.+?)\.html$", filename)
+        if match:
+            return match.group(1)
+    if "statutes.php_statute-" in filename:
+        match = re.search(r"statute-(.+?)(?:_print-true)?\.html$", filename)
+        if match:
+            return match.group(1)
+    if filename.startswith("Docs_") and "_htm_" in filename:
+        match = re.search(r"_htm_([A-Z]+)\.(\d+)\.htm_\d+-(.+?)\.html$", filename)
+        if match:
+            return f"{match.group(1)}/{match.group(2)}.{match.group(3)}"
+    if "title" in filename and "sec" in filename:
+        match = re.search(r"title([\d]+(?:-[A-Z])?)ch\d+sec(\d+)", filename)
+        if match:
+            return f"{match.group(1)}-{match.group(2)}"
+    if "GeneralLaws" in filename and "Chapter" in filename and "Section" in filename:
+        match = re.search(r"Chapter([^_]+)_Section([^_.]+)", filename)
+        if match:
+            return f"{match.group(1)}-{match.group(2)}"
+    if "DocName-" in filename or "documents_" in filename:
+        match = re.search(
+            r"(?:DocName-|documents_)(\d{4})0(\d{3})0K(.+?)(?:\.htm)?(?:\.html)?$",
+            filename,
+            re.IGNORECASE,
+        )
+        if match:
+            return f"{int(match.group(1))}-{int(match.group(2))}-{match.group(3)}"
+    if "statutes_section_" in filename:
+        match = re.search(r"statutes_section_([^_]+)_([^_]+)_([^_.]+)", filename)
+        if match:
+            section = re.sub(r"^0+(?=\d)", "", match.group(3)) or "0"
+            return f"{match.group(1)}-{match.group(2)}-{section}"
+    if "xcode_Title" in filename and "-S" in filename:
+        match = re.search(r"(?:C)?(\d+[A-Z]?)-(\d+)-S([^_.]+)", filename, re.IGNORECASE)
+        if match:
+            return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+    if "Statutes_TITLE" in filename:
+        match = re.search(r"Statutes_(TITLE\d+)", filename)
+        if match:
+            return match.group(1)
+    if filename.startswith("code_t") and "c" in filename:
+        match = re.search(r"code_t(\d+)c(\d+)", filename)
+        if match:
+            return f"{int(match.group(1))}-{int(match.group(2))}"
+    if "_folder-" in filename:
+        match = re.search(r"_folder-(\d+)\.html$", filename)
+        if match:
+            return match.group(1)
+    if "NHTOC-" in filename:
+        match = re.search(r"NHTOC-([^.]+)\.htm", filename)
+        if match:
+            return match.group(1)
+    if "NRS_NRS-" in filename:
+        match = re.search(r"NRS-([^.]+)\.html", filename)
+        if match:
+            return match.group(1)
+    if "_ttl-" in filename:
+        match = re.search(r"_ttl-(\d+)\.html$", filename)
+        if match:
+            return match.group(1)
+    stem = Path(filename).stem
+    for prefix in ("section", "sec", "statute"):
+        stem = re.sub(rf"^{prefix}[-_]?", "", stem, flags=re.IGNORECASE)
+    return stem
+
+
+def _state_html_parse_context(
+    section_number: str,
+    *,
+    state_code: str,
+    filename: str,
+    html: str,
+    source_url: str,
+) -> dict[str, Any]:
+    context: dict[str, Any] = {
+        "section": section_number,
+        "section_number": section_number,
+        "citation": section_number,
+        "html": html,
+        "html_content": html,
+        "url": source_url,
+        "html_url": source_url,
+    }
+    if state_code == "tx":
+        code, section = _split_state_html_prefixed_section(section_number, state_code)
+        context.update(code=code, section=section, section_number=section)
+    elif state_code == "me":
+        title, section = _split_state_html_last_hyphen(section_number, state_code)
+        context.update(
+            title=int(title) if title.isdigit() else title,
+            section=section,
+            section_number=section,
+        )
+    elif state_code == "ma":
+        chapter, section = _split_state_html_last_hyphen(section_number, state_code)
+        context.update(chapter=chapter, section=section, section_number=section)
+    elif state_code == "md":
+        article_code, section = _split_state_html_prefixed_section(section_number, state_code)
+        context.update(
+            article_code=article_code.lower(),
+            section=section,
+            section_number=section,
+        )
+    elif state_code == "il":
+        chapter, act, section = _split_state_html_triplet(section_number, state_code)
+        context.update(
+            chapter=int(chapter),
+            act=int(act),
+            section=section,
+            section_number=section,
+        )
+    elif state_code == "vt":
+        title, chapter, section = _split_state_html_triplet(section_number, state_code)
+        context.update(
+            title=int(title),
+            chapter=int(chapter),
+            section=section,
+            section_number=section,
+        )
+    elif state_code == "la" and section_number.isdigit():
+        context["doc_id"] = int(section_number)
+
+    de_match = re.search(r"title(?P<title>\d+)_c(?P<chapter>\d+)", filename)
+    if de_match:
+        context.update(
+            title=int(de_match.group("title")),
+            chapter=int(de_match.group("chapter")),
+        )
+    sc_match = re.search(r"code_t(?P<title>\d+)c(?P<chapter>\d+)", filename)
+    if sc_match:
+        context.update(
+            title=int(sc_match.group("title")),
+            chapter=int(sc_match.group("chapter")),
+        )
+    or_match = re.search(r"(?:ors|chapter)[_-]?(?P<chapter>\d+)", filename, re.IGNORECASE)
+    if or_match:
+        context["chapter"] = int(or_match.group("chapter"))
+    ct_match = re.search(r"(?:chapter|chap)[_-]?(?P<chapter>[0-9A-Za-z]+)", filename, re.IGNORECASE)
+    if ct_match:
+        context["chapter"] = ct_match.group("chapter")
+    return context
+
+
+def _state_html_parse_args(method: Any, context: dict[str, Any]) -> list[Any]:
+    args: list[Any] = []
+    html = str(context["html"])
+    for parameter in inspect.signature(method).parameters.values():
+        if parameter.name == "soup":
+            args.append(BeautifulSoup(html, "html.parser"))
+        elif parameter.name in context:
+            args.append(context[parameter.name])
+        elif parameter.default is not inspect.Parameter.empty:
+            args.append(parameter.default)
+        else:
+            raise ValueError(f"unsupported parser argument: {parameter.name}")
+    return args
+
+
+def _state_html_to_sections(
+    converter: Any,
+    parsed: Any,
+    context: dict[str, Any],
+) -> tuple[Section, ...]:
+    if parsed is None:
+        return ()
+    parsed_values: tuple[Any, ...]
+    if isinstance(parsed, Section):
+        return (parsed,)
+    if isinstance(parsed, dict):
+        parsed_values = tuple(parsed.values())
+    elif isinstance(parsed, list | tuple):
+        parsed_values = tuple(parsed)
+    else:
+        parsed_values = (parsed,)
+    if not hasattr(converter, "_to_section"):
+        raise ValueError(f"{type(converter).__name__} has no _to_section method")
+    to_section = converter._to_section
+    sections: list[Section] = []
+    for parsed_value in parsed_values:
+        args = _state_html_to_section_args(to_section, parsed_value, context)
+        section = to_section(*args)
+        if isinstance(section, Section):
+            sections.append(section)
+    return tuple(sections)
+
+
+def _state_html_to_section_args(
+    method: Any,
+    parsed_value: Any,
+    context: dict[str, Any],
+) -> list[Any]:
+    args: list[Any] = []
+    for index, parameter in enumerate(inspect.signature(method).parameters.values()):
+        if index == 0:
+            args.append(parsed_value)
+        elif parameter.name in context:
+            args.append(context[parameter.name])
+        elif parameter.default is not inspect.Parameter.empty:
+            args.append(parameter.default)
+        else:
+            raise ValueError(f"unsupported converter argument: {parameter.name}")
+    return args
+
+
+def _split_state_html_last_hyphen(value: str, state_code: str) -> tuple[str, str]:
+    if "-" not in value:
+        raise ValueError(f"could not split {state_code.upper()} section id: {value}")
+    left, right = value.rsplit("-", 1)
+    return left, right
+
+
+def _split_state_html_prefixed_section(value: str, state_code: str) -> tuple[str, str]:
+    match = re.match(r"([^/-]+)[/-](.+)", value)
+    if not match:
+        raise ValueError(f"could not split {state_code.upper()} section id: {value}")
+    return match.group(1), match.group(2)
+
+
+def _split_state_html_triplet(value: str, state_code: str) -> tuple[str, str, str]:
+    match = re.match(r"([^/-]+)[/-]([^/-]+)[/-](.+)", value)
+    if not match:
+        raise ValueError(f"could not split {state_code.upper()} section id: {value}")
+    return match.group(1), match.group(2), match.group(3)
+
+
+def _state_html_section_identity(
+    section: Section,
+    jurisdiction: str,
+) -> _StateHtmlSectionIdentity:
+    state_code = jurisdiction.removeprefix("us-")
+    title: str | None = None
+    native_section: str | None = None
+    if section.uslm_id:
+        parts = [part for part in section.uslm_id.split("/") if part]
+        if parts and parts[0] == state_code and len(parts) >= 2:
+            title = parts[1]
+            native_section = parts[-1]
+    if native_section is None:
+        native_section = _strip_state_html_section_prefix(
+            section.citation.section,
+            state_code=state_code,
+        )
+    if title is None and section.citation.title != 0:
+        title = str(section.citation.title)
+    if title is None:
+        title = _state_html_infer_title(native_section)
+    title_token = _clean_path_token(title) if title else None
+    section_token = _clean_path_token(native_section)
+    parent_citation_path = f"{jurisdiction}/statute/{title_token}" if title_token else None
+    citation_path = (
+        f"{parent_citation_path}/{section_token}"
+        if parent_citation_path
+        else f"{jurisdiction}/statute/{section_token}"
+    )
+    return _StateHtmlSectionIdentity(
+        title=title,
+        section=native_section,
+        citation_path=citation_path,
+        parent_citation_path=parent_citation_path,
+    )
+
+
+def _strip_state_html_section_prefix(value: str, *, state_code: str) -> str:
+    return re.sub(rf"^{re.escape(state_code.upper())}-", "", value, flags=re.IGNORECASE)
+
+
+def _state_html_infer_title(section: str) -> str | None:
+    match = re.match(r"(?P<title>[A-Za-z0-9]+)", section)
+    return match.group("title") if match else None
+
+
+def _state_html_title_record(
+    section: Section,
+    *,
+    identity: _StateHtmlSectionIdentity,
+    jurisdiction: str,
+    version: str,
+    source_path: str,
+    source_format: str,
+    source_as_of: str,
+    expression_date: str,
+) -> ProvisionRecord:
+    assert identity.parent_citation_path is not None
+    title = identity.title or "0"
+    legal_identifier = f"{jurisdiction.upper()} title {title}"
+    return ProvisionRecord(
+        id=deterministic_provision_id(identity.parent_citation_path),
+        jurisdiction=jurisdiction,
+        document_class=DocumentClass.STATUTE.value,
+        citation_path=identity.parent_citation_path,
+        citation_label=legal_identifier,
+        heading=section.title_name,
+        body=None,
+        version=version,
+        source_url=_non_file_url(section.source_url),
+        source_path=source_path,
+        source_id=section.uslm_id,
+        source_format=source_format,
+        source_as_of=source_as_of,
+        expression_date=expression_date,
+        parent_citation_path=None,
+        parent_id=None,
+        level=0,
+        ordinal=_ordinal(title),
+        kind="title",
+        legal_identifier=legal_identifier,
+        identifiers={"state:title": title},
+        metadata=_state_html_section_metadata(section, kind="title"),
+    )
+
+
+def _state_html_section_record(
+    section: Section,
+    *,
+    identity: _StateHtmlSectionIdentity,
+    jurisdiction: str,
+    version: str,
+    source_path: str,
+    source_format: str,
+    source_as_of: str,
+    expression_date: str,
+) -> ProvisionRecord:
+    legal_identifier = f"{jurisdiction.upper()} § {identity.section}"
+    return ProvisionRecord(
+        id=deterministic_provision_id(identity.citation_path),
+        jurisdiction=jurisdiction,
+        document_class=DocumentClass.STATUTE.value,
+        citation_path=identity.citation_path,
+        citation_label=legal_identifier,
+        heading=section.section_title,
+        body=section.text,
+        version=version,
+        source_url=_non_file_url(section.source_url),
+        source_path=source_path,
+        source_id=section.uslm_id,
+        source_format=source_format,
+        source_as_of=source_as_of,
+        expression_date=expression_date,
+        parent_citation_path=identity.parent_citation_path,
+        parent_id=(
+            deterministic_provision_id(identity.parent_citation_path)
+            if identity.parent_citation_path
+            else None
+        ),
+        level=1 if identity.parent_citation_path else 0,
+        ordinal=_ordinal(identity.section),
+        kind="section",
+        legal_identifier=legal_identifier,
+        identifiers={
+            "state:title": identity.title or "",
+            "state:section": identity.section,
+        },
+        metadata=_state_html_section_metadata(section, kind="section"),
+    )
+
+
+def _state_html_section_metadata(section: Section, *, kind: str) -> dict[str, Any]:
+    metadata: dict[str, Any] = {"kind": kind}
+    if section.uslm_id:
+        metadata["legacy_uslm_id"] = section.uslm_id
+    if section.retrieved_at:
+        metadata["retrieved_at"] = section.retrieved_at.isoformat()
+    if section.effective_date:
+        metadata["effective_date"] = section.effective_date.isoformat()
+    if section.public_laws:
+        metadata["public_laws"] = list(section.public_laws)
+    if section.references_to:
+        metadata["references_to"] = list(section.references_to)
+    return metadata
+
+
+def _non_file_url(value: str | None) -> str | None:
+    if not value or value.startswith("file://"):
+        return None
     return value
 
 
