@@ -259,14 +259,15 @@ def _cmd_load_supabase(args: argparse.Namespace) -> int:
                     doc_type=document_class,
                 )
             )
-            existing_navigation_statuses.update(
-                fetch_navigation_statuses(
-                    service_key=service_key,
-                    supabase_url=args.supabase_url,
-                    jurisdiction=jurisdiction,
-                    doc_type=document_class,
+            if args.preserve_navigation_statuses:
+                existing_navigation_statuses.update(
+                    fetch_navigation_statuses(
+                        service_key=service_key,
+                        supabase_url=args.supabase_url,
+                        jurisdiction=jurisdiction,
+                        doc_type=document_class,
+                    )
                 )
-            )
         nodes = build_navigation_nodes(
             _apply_navigation_status_overrides(
                 navigation_records,
@@ -314,6 +315,15 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
     if not args.provisions and not args.from_supabase:
         raise SystemExit("build-navigation-index requires --provisions, --from-supabase, or --all")
 
+    will_write_supabase = not args.skip_supabase and not args.dry_run
+    service_key = ""
+    if will_write_supabase or args.from_supabase:
+        service_key = resolve_service_key(
+            args.supabase_url,
+            service_key_env=args.service_key_env,
+            access_token_env=args.access_token_env,
+        )
+
     records: tuple[ProvisionRecord, ...]
     existing_navigation_statuses: dict[str, str] = {}
     if args.provisions:
@@ -322,31 +332,41 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
             loaded.extend(load_provisions(path))
         records = tuple(loaded)
         sources_used = [str(path) for path in args.provisions]
+        # Preserve manually-set statuses from the live nav table when we are
+        # going to write back, so a rebuild from a partial JSONL does not wipe
+        # them. Fetch is scoped per (jurisdiction, doc_type) to avoid pulling
+        # rows for unrelated scopes.
+        if will_write_supabase and args.preserve_statuses:
+            for jurisdiction, document_class in _provision_scopes(records):
+                existing_navigation_statuses.update(
+                    fetch_navigation_statuses(
+                        service_key=service_key,
+                        supabase_url=args.supabase_url,
+                        jurisdiction=jurisdiction,
+                        doc_type=document_class,
+                    )
+                )
     else:
-        service_key_for_fetch = resolve_service_key(
-            args.supabase_url,
-            service_key_env=args.service_key_env,
-            access_token_env=args.access_token_env,
-        )
         records = fetch_provisions_for_navigation(
-            service_key=service_key_for_fetch,
+            service_key=service_key,
             supabase_url=args.supabase_url,
             jurisdiction=args.jurisdiction,
             doc_type=args.doc_type,
         )
-        existing_navigation_statuses = fetch_navigation_statuses(
-            service_key=service_key_for_fetch,
-            supabase_url=args.supabase_url,
-            jurisdiction=args.jurisdiction,
-            doc_type=args.doc_type,
-        )
+        if args.preserve_statuses:
+            existing_navigation_statuses = fetch_navigation_statuses(
+                service_key=service_key,
+                supabase_url=args.supabase_url,
+                jurisdiction=args.jurisdiction,
+                doc_type=args.doc_type,
+            )
         sources_used = [f"supabase:{args.supabase_url}"]
 
     nodes: tuple[NavigationNode, ...] = build_navigation_nodes(
         _apply_navigation_status_overrides(
             records,
             existing_statuses=existing_navigation_statuses,
-            overrides=(),
+            overrides=records if args.provisions else (),
         ),
         jurisdiction=args.jurisdiction,
         document_class=args.doc_type,
@@ -358,6 +378,7 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
         "jurisdiction": args.jurisdiction,
         "doc_type": args.doc_type,
         "sources": sources_used,
+        "preserved_status_count": len(existing_navigation_statuses),
     }
 
     if args.output:
@@ -373,13 +394,6 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
-    service_key = ""
-    if not args.dry_run:
-        service_key = resolve_service_key(
-            args.supabase_url,
-            service_key_env=args.service_key_env,
-            access_token_env=args.access_token_env,
-        )
     write_report = write_navigation_nodes_to_supabase(
         nodes,
         service_key=service_key,
@@ -412,21 +426,42 @@ def _apply_navigation_status_overrides(
     existing_statuses: dict[str, str] | None = None,
     overrides: Iterable[ProvisionRecord],
 ) -> tuple[ProvisionRecord, ...]:
-    statuses: dict[str, str | None] = dict(existing_statuses or {})
-    statuses.update({record.citation_path: _navigation_status(record) for record in overrides})
-    if not statuses:
+    """Inject curated navigation statuses onto a stream of provision records.
+
+    Statuses are editorial metadata that don't live in `corpus.provisions`;
+    extractors typically leave `metadata.status` unset. To keep manually
+    curated statuses across rebuilds we resolve each record's status as:
+
+    * If a record in ``overrides`` has a non-empty ``metadata.status`` it
+      wins. Re-extracted source records can therefore introduce or change a
+      status without colliding with curated state.
+    * Otherwise we fall back to ``existing_statuses`` (typically a snapshot
+      of the live `corpus.navigation_nodes.status` column).
+    * Otherwise the record's own ``metadata.status`` (if any) is left alone.
+
+    A ``None`` override is treated as "no opinion" rather than "clear" so
+    that fresh source data doesn't accidentally wipe curated statuses.
+    """
+    overrides_with_status: dict[str, str] = {}
+    for record in overrides:
+        status = _navigation_status(record)
+        if status is not None:
+            overrides_with_status[record.citation_path] = status
+    resolved: dict[str, str] = dict(existing_statuses or {})
+    resolved.update(overrides_with_status)
+    if not resolved:
         return tuple(records)
     updated: list[ProvisionRecord] = []
     for record in records:
-        if record.citation_path not in statuses:
+        target = resolved.get(record.citation_path)
+        if target is None:
             updated.append(record)
             continue
-        status = statuses[record.citation_path]
+        if _navigation_status(record) == target:
+            updated.append(record)
+            continue
         metadata = dict(record.metadata or {})
-        if status is None:
-            metadata.pop("status", None)
-        else:
-            metadata["status"] = status
+        metadata["status"] = target
         updated.append(replace(record, metadata=metadata))
     return tuple(updated)
 
@@ -2481,6 +2516,15 @@ def build_parser() -> argparse.ArgumentParser:
             "provisions upsert succeeds. Disabled with --no-build-navigation."
         ),
     )
+    load_supabase.add_argument(
+        "--preserve-navigation-statuses",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Carry curated corpus.navigation_nodes.status values across the "
+            "post-load nav rebuild. Disable with --no-preserve-navigation-statuses."
+        ),
+    )
     load_supabase.set_defaults(func=_cmd_load_supabase)
 
     build_navigation = sub.add_parser(
@@ -2542,6 +2586,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_navigation.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
     build_navigation.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
+    build_navigation.add_argument(
+        "--preserve-statuses",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Carry curated corpus.navigation_nodes.status values across the "
+            "rebuild. Disable with --no-preserve-statuses to wipe and rederive."
+        ),
+    )
     build_navigation.set_defaults(func=_cmd_build_navigation_index)
 
     snapshot_counts = sub.add_parser(
