@@ -506,7 +506,11 @@ def _artifact_row_rank(row: ArtifactScopeRow) -> tuple[int, int, int, int, str]:
 
 
 def _source_first_complete(row: ArtifactScopeRow | None) -> bool:
-    return row is not None and _local_complete(row) and row.coverage_complete is True
+    return (
+        row is not None
+        and (_local_complete(row) or _r2_complete(row) is True)
+        and row.coverage_complete is True
+    )
 
 
 def _local_complete(row: ArtifactScopeRow) -> bool:

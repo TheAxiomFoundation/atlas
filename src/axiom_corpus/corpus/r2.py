@@ -10,6 +10,7 @@ import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -164,11 +165,12 @@ class ArtifactScopeRow:
 
     def mismatch_reasons(self) -> tuple[str, ...]:
         reasons: list[str] = []
-        if not self.local_inventory:
+        has_remote_status = self.remote_inventory is not None
+        if not self.local_inventory and (not has_remote_status or not self.remote_inventory):
             reasons.append("missing_local_inventory")
-        if not self.local_provisions:
+        if not self.local_provisions and (not has_remote_status or not self.remote_provisions):
             reasons.append("missing_local_provisions")
-        if not self.local_coverage:
+        if not self.local_coverage and (not has_remote_status or not self.remote_coverage):
             reasons.append("missing_local_coverage")
         if self.coverage_complete is False:
             reasons.append("coverage_incomplete")
@@ -486,6 +488,7 @@ def build_artifact_report(
     document_class: str | None = None,
     supabase_counts_path: str | Path | None = None,
     remote: Mapping[str, RemoteArtifact] | None = None,
+    remote_coverage: Mapping[str, Mapping[str, Any]] | None = None,
     release_name: str | None = None,
     release_scopes: Iterable[ScopeKey] | None = None,
 ) -> ArtifactReport:
@@ -520,6 +523,7 @@ def build_artifact_report(
         document_class=document_class,
         release_scopes=release_scope_keys,
         supabase_counts=supabase_counts,
+        remote_coverage=remote_coverage,
     )
     supabase_groups = _build_supabase_groups(rows, supabase_counts)
     return ArtifactReport(
@@ -557,7 +561,20 @@ def build_artifact_report_with_r2(
 ) -> ArtifactReport:
     prefix_tuple = _normalize_prefixes(prefixes)
     r2 = client or make_r2_client(config)
+    release_scope_keys = _normalize_release_scopes(release_scopes)
     remote = list_r2_artifacts(r2, bucket=config.bucket, prefixes=prefix_tuple)
+    scoped_remote = _filter_remote_artifacts(
+        remote,
+        jurisdiction=jurisdiction,
+        document_class=document_class,
+        version=version,
+        release_scopes=release_scope_keys,
+    )
+    remote_coverage = _load_remote_coverage_payloads(
+        r2,
+        bucket=config.bucket,
+        remote=scoped_remote or {},
+    )
     return build_artifact_report(
         root,
         prefixes=prefix_tuple,
@@ -566,8 +583,9 @@ def build_artifact_report_with_r2(
         document_class=document_class,
         supabase_counts_path=supabase_counts_path,
         remote=remote,
+        remote_coverage=remote_coverage,
         release_name=release_name,
-        release_scopes=release_scopes,
+        release_scopes=release_scope_keys,
     )
 
 
@@ -626,6 +644,7 @@ def _build_scope_rows(
     document_class: str | None,
     release_scopes: frozenset[ScopeKey] | None,
     supabase_counts: Mapping[tuple[str, str], int],
+    remote_coverage: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[ArtifactScopeRow, ...]:
     builders: dict[tuple[str, str, str], dict[str, Any]] = defaultdict(dict)
     if release_scopes is not None:
@@ -635,7 +654,7 @@ def _build_scope_rows(
         _merge_local_scope(builders, root, local_artifact)
     if remote is not None:
         for remote_artifact in remote.values():
-            _merge_remote_scope(builders, remote_artifact)
+            _merge_remote_scope(builders, remote_artifact, remote_coverage=remote_coverage)
     visible_keys = []
     for key in sorted(builders):
         row_jurisdiction, row_document_class, row_version = key
@@ -746,6 +765,8 @@ def _merge_local_scope(
 def _merge_remote_scope(
     builders: dict[tuple[str, str, str], dict[str, Any]],
     artifact: RemoteArtifact,
+    *,
+    remote_coverage: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
     parts = artifact.key.split("/")
     parsed = _parse_scope(parts)
@@ -759,6 +780,8 @@ def _merge_remote_scope(
         data["remote_provisions"] = True
     elif artifact_type == "coverage":
         data["remote_coverage"] = True
+        if remote_coverage is not None and artifact.key in remote_coverage:
+            _merge_coverage_payload(data, remote_coverage[artifact.key])
     elif artifact_type == "sources":
         data["remote_source_files"] = int(data.get("remote_source_files", 0)) + 1
         data["remote_source_bytes"] = int(data.get("remote_source_bytes", 0)) + artifact.size
@@ -839,12 +862,39 @@ def _merge_coverage(data: dict[str, Any], path: Path) -> None:
         coverage = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return
+    _merge_coverage_payload(data, coverage)
+
+
+def _merge_coverage_payload(data: dict[str, Any], coverage: Mapping[str, Any]) -> None:
     data["coverage_complete"] = bool(coverage.get("complete"))
     data["source_count"] = int(coverage.get("source_count", 0))
     data["provision_count"] = int(coverage.get("provision_count", 0))
     data["matched_count"] = int(coverage.get("matched_count", 0))
     data["missing_count"] = len(coverage.get("missing_from_provisions", ()))
     data["extra_count"] = len(coverage.get("extra_provisions", ()))
+
+
+def _load_remote_coverage_payloads(
+    client: Any,
+    *,
+    bucket: str,
+    remote: Mapping[str, RemoteArtifact],
+) -> dict[str, Mapping[str, Any]]:
+    payloads: dict[str, Mapping[str, Any]] = {}
+    for key in sorted(remote):
+        if not key.startswith("coverage/") or not key.endswith(".json"):
+            continue
+        try:
+            response = client.get_object(Bucket=bucket, Key=key)
+            body = response["Body"]
+            with closing(body):
+                raw = body.read()
+            data = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+        except Exception:
+            continue
+        if isinstance(data, Mapping):
+            payloads[key] = data
+    return payloads
 
 
 def _summarize_by_prefix(artifacts: Iterable[LocalArtifact]) -> dict[str, dict[str, int]]:

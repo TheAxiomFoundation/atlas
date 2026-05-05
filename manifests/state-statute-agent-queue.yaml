@@ -1,4 +1,4 @@
-version: "2026-05-04"
+version: "2026-05-05"
 source_report: data/corpus/analytics/state-statute-completion-current.json
 document_class: statute
 policy:
@@ -16,12 +16,10 @@ policy:
     - State Options Reports
   publication_requires_controller: true
 status_counts:
-  done: 4
-  blocked_release_repair: 14
-  agent_ready: 33
+  done: 20
+  blocked_release_repair: 0
+  agent_ready: 31
 recommended_first_batch:
-  - us-mt
-  - us-nv
   - us-or
   - us-ar
 states:
@@ -49,102 +47,102 @@ states:
 
   - jurisdiction: us-ca
     name: California
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-05-01"
-    supabase_count: 185590
-    notes: Release scope exists and R2 appears complete; repair local artifact or validation state before assigning adapter work.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-01"
+    provision_count: 185590
+    notes: Current release is R2-complete and validated; local cache artifacts are optional.
   - jurisdiction: us-co
     name: Colorado
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 39920
-    notes: Release scope exists and R2 appears complete; repair local artifact or validation state before assigning adapter work.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 39920
+    notes: Current release is R2-complete and validated; local cache artifacts are optional.
   - jurisdiction: us-dc
     name: District of Columbia
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 24346
-    notes: Release scope exists and R2 appears complete; repair local artifact or validation state before assigning adapter work.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 24346
+    notes: Current release is R2-complete and validated; local cache artifacts are optional.
   - jurisdiction: us-ga
     name: Georgia
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 32457
-    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 32457
+    notes: Published and validated; existing release uses a CIC source, so prefer a primary official source if rebuilding.
   - jurisdiction: us-ky
     name: Kentucky
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 40088
-    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 40088
+    notes: Published and validated; existing release uses a CIC source, so prefer a primary official source if rebuilding.
   - jurisdiction: us-mn
     name: Minnesota
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-05-01"
-    supabase_count: 53438
-    notes: Official adapter exists; repair local artifact or validation state first.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-01"
+    provision_count: 53438
+    notes: Current release is R2-complete and validated; local cache artifacts are optional.
   - jurisdiction: us-nc
     name: North Carolina
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 37002
-    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 37002
+    notes: Published and validated; existing release uses a CIC source, so prefer a primary official source if rebuilding.
   - jurisdiction: us-nd
     name: North Dakota
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 33780
-    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 33780
+    notes: Published and validated; existing release uses a CIC source, so prefer a primary official source if rebuilding.
   - jurisdiction: us-oh
     name: Ohio
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-05-01"
-    supabase_count: 34678
-    notes: Official adapter exists; repair local artifact or validation state first.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-01"
+    provision_count: 34678
+    notes: Current release is R2-complete and validated; local cache artifacts are optional.
   - jurisdiction: us-tn
     name: Tennessee
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 36186
-    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 36186
+    notes: Published and validated; existing release uses a CIC source, so prefer a primary official source if rebuilding.
   - jurisdiction: us-tx
     name: Texas
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-05-01"
-    supabase_count: 145709
-    notes: Official adapter exists; repair local artifact or validation state first.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-01"
+    provision_count: 145709
+    notes: Current release is R2-complete and validated; local cache artifacts are optional.
   - jurisdiction: us-vt
     name: Vermont
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 5836
-    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 5836
+    notes: Published and validated; existing release uses a CIC source, so prefer a primary official source if rebuilding.
   - jurisdiction: us-va
     name: Virginia
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 36402
-    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 36402
+    notes: Published and validated; existing release uses a CIC source, so prefer a primary official source if rebuilding.
   - jurisdiction: us-wy
     name: Wyoming
-    queue_status: blocked_release_repair
-    production_status: production_blocked_or_incomplete
-    release_version: "2026-04-29"
-    supabase_count: 20262
-    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-04-29"
+    provision_count: 20262
+    notes: Published and validated; existing release uses a CIC source, so prefer a primary official source if rebuilding.
 
   - jurisdiction: us-in
     name: Indiana
@@ -156,18 +154,20 @@ states:
     notes: Source-first Indiana Code adapter is published and validated against the official IGA HTML release.
   - jurisdiction: us-mt
     name: Montana
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 44101
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-05"
+    provision_count: 49849
     priority: 1
-    notes: Large legacy corpus; discover current official primary source and build source-first adapter.
+    notes: Source-first Montana Code Annotated adapter is published and validated against the official MCA HTML.
   - jurisdiction: us-nv
     name: Nevada
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 48637
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-05"
+    provision_count: 51199
     priority: 1
-    notes: Large legacy corpus; discover current official primary source and build source-first adapter.
+    notes: Source-first Nevada Revised Statutes adapter is published and validated against the official NRS HTML.
   - jurisdiction: us-or
     name: Oregon
     queue_status: agent_ready

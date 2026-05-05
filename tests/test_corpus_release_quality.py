@@ -47,6 +47,47 @@ def test_validate_release_reports_artifact_report_mismatches(tmp_path):
         validate_release(store.root, ReleaseManifest(name="current", scopes=()), max_issues=0)
 
 
+def test_validate_release_accepts_r2_complete_remote_only_scope(tmp_path):
+    store = CorpusArtifactStore(tmp_path / "corpus")
+    artifact_report = ArtifactReport(
+        local_root=store.root,
+        prefixes=(),
+        local_count=0,
+        local_bytes=0,
+        local_by_prefix={},
+        remote_count=3,
+        remote_bytes=3,
+        remote_by_prefix=None,
+        rows=(
+            ArtifactScopeRow(
+                jurisdiction="us-co",
+                document_class="statute",
+                version="v1",
+                remote_inventory=True,
+                remote_provisions=True,
+                remote_coverage=True,
+                coverage_complete=True,
+                provision_count=10,
+                supabase_count=10,
+            ),
+        ),
+    )
+
+    report = validate_release(
+        store.root,
+        ReleaseManifest(
+            name="current",
+            scopes=(ReleaseScope("us-co", "statute", "v1"),),
+        ),
+        artifact_report=artifact_report,
+    )
+
+    assert report.ok is True
+    assert report.error_count == 0
+    assert report.warning_count == 1
+    assert report.issues[0].code == "remote_only_scope_not_deep_validated"
+
+
 def test_validate_release_reports_scope_invariant_errors(tmp_path):
     store = CorpusArtifactStore(tmp_path / "corpus")
     version = "2026-04-29"

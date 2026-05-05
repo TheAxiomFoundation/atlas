@@ -230,6 +230,71 @@ def test_state_statute_completion_blocks_release_on_mismatches(tmp_path):
     }
 
 
+def test_state_statute_completion_accepts_r2_only_release_artifacts(tmp_path):
+    validation_path = tmp_path / "validate-release-current.json"
+    validation_path.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "error_count": 0,
+                "warning_count": 1,
+                "strict_warnings": False,
+                "issues_truncated": False,
+                "issues": [
+                    {
+                        "severity": "warning",
+                        "code": "remote_only_scope_not_deep_validated",
+                        "jurisdiction": "us-co",
+                        "document_class": "statute",
+                        "version": "v1",
+                    }
+                ],
+            }
+        )
+    )
+    release = ReleaseManifest(
+        name="current",
+        scopes=(ReleaseScope("us-co", "statute", "v1"),),
+    )
+    artifact_report = ArtifactReport(
+        local_root=tmp_path,
+        prefixes=(),
+        local_count=0,
+        local_bytes=0,
+        local_by_prefix={},
+        remote_count=3,
+        remote_bytes=3,
+        remote_by_prefix=None,
+        rows=(
+            ArtifactScopeRow(
+                jurisdiction="us-co",
+                document_class="statute",
+                version="v1",
+                remote_inventory=True,
+                remote_provisions=True,
+                remote_coverage=True,
+                coverage_complete=True,
+                provision_count=4,
+            ),
+        ),
+    )
+
+    report = build_state_statute_completion_report(
+        tmp_path,
+        release=release,
+        artifact_report=artifact_report,
+        validation_report_path=validation_path,
+        expected_jurisdictions=(StateStatuteJurisdiction("us-co", "Colorado"),),
+    )
+    row = report.rows[0]
+
+    assert row.status is StateStatuteCompletionStatus.PRODUCTIONIZED_AND_VALIDATED
+    assert row.local_complete is True
+    assert row.r2_complete is True
+    assert row.release_provision_count == 4
+    assert row.mismatch_reasons == ()
+
+
 def test_state_statute_completion_reports_incomplete_and_unvalidated_scopes(tmp_path):
     store = CorpusArtifactStore(tmp_path / "corpus")
     _write_complete_statute_scope(store, "us-co", "2026-04-29", count=1)

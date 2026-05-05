@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -127,9 +128,25 @@ def validate_release(
         raise ValueError("max_issues must be positive")
     store = CorpusArtifactStore(root)
     collector = _IssueCollector(max_issues=max_issues)
+    artifact_rows = {}
     if artifact_report is not None:
         _validate_artifact_report(artifact_report, collector)
+        artifact_rows = {
+            (row.jurisdiction, row.document_class, row.version): row
+            for row in artifact_report.rows
+        }
     for scope in release.scopes:
+        if _scope_has_remote_artifacts(scope, artifact_rows):
+            collector.add(
+                "warning",
+                "remote_only_scope_not_deep_validated",
+                (
+                    "release scope is complete in R2 but local cache artifacts are absent, "
+                    "so deep record validation was skipped"
+                ),
+                scope=scope,
+            )
+            continue
         _validate_scope(store, scope, collector)
     return ReleaseValidationReport(
         release_name=release.name,
@@ -177,6 +194,25 @@ def _validate_artifact_report(
                 version=",".join(group.versions),
             ),
         )
+
+
+def _scope_has_remote_artifacts(
+    scope: ReleaseScope,
+    rows: Mapping[tuple[str, str, str], Any],
+) -> bool:
+    row = rows.get(scope.key)
+    if row is None:
+        return False
+    local_complete = row.local_inventory and row.local_provisions and row.local_coverage
+    if local_complete:
+        return False
+    return (
+        row.remote_inventory is True
+        and row.remote_provisions is True
+        and row.remote_coverage is True
+        and row.coverage_complete is True
+        and row.provision_count is not None
+    )
 
 
 def _validate_scope(

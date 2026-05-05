@@ -1,4 +1,5 @@
 import json
+from io import BytesIO
 from pathlib import Path
 
 from axiom_corpus.corpus.artifacts import CorpusArtifactStore
@@ -7,6 +8,7 @@ from axiom_corpus.corpus.r2 import (
     R2Config,
     RemoteArtifact,
     build_artifact_report,
+    build_artifact_report_with_r2,
     build_release_artifact_manifest,
     load_r2_config,
     sync_artifacts_to_r2,
@@ -25,8 +27,8 @@ class FakeR2Client:
     def paginate(self, **kwargs):
         assert kwargs["Bucket"] == "axiom-corpus"
         contents = [
-            {"Key": key, "Size": size, "ETag": f'"{key}"'}
-            for key, size in sorted(self.objects.items())
+            {"Key": key, "Size": _object_size(payload), "ETag": f'"{key}"'}
+            for key, payload in sorted(self.objects.items())
             if key.startswith(kwargs["Prefix"])
         ]
         return [{"Contents": contents}]
@@ -35,6 +37,23 @@ class FakeR2Client:
         assert bucket == "axiom-corpus"
         self.uploads.append((Path(filename), key, kwargs["ExtraArgs"]))
         self.objects[key] = Path(filename).stat().st_size
+
+    def get_object(self, **kwargs):
+        assert kwargs["Bucket"] == "axiom-corpus"
+        payload = self.objects[kwargs["Key"]]
+        if isinstance(payload, int):
+            payload = b""
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        return {"Body": BytesIO(payload)}
+
+
+def _object_size(payload):
+    if isinstance(payload, int):
+        return payload
+    if isinstance(payload, str):
+        return len(payload.encode("utf-8"))
+    return len(payload)
 
 
 def test_load_r2_config_uses_env_without_exposing_secret():
@@ -318,6 +337,49 @@ def test_artifact_report_compares_supabase_counts_across_release_scopes(tmp_path
             "versions": ["2026-05-01-a", "2026-05-02-b"],
         }
     ]
+
+
+def test_artifact_report_with_r2_reads_remote_coverage_counts(tmp_path):
+    store = CorpusArtifactStore(tmp_path / "corpus")
+    coverage_key = "coverage/us-co/statute/2026-04-30.json"
+    client = FakeR2Client(
+        {
+            "inventory/us-co/statute/2026-04-30.json": 1,
+            "provisions/us-co/statute/2026-04-30.jsonl": 1,
+            coverage_key: json.dumps(
+                {
+                    "complete": True,
+                    "source_count": 7,
+                    "provision_count": 7,
+                    "matched_count": 7,
+                    "missing_from_provisions": [],
+                    "extra_provisions": [],
+                }
+            ),
+        }
+    )
+    config = R2Config(
+        bucket="axiom-corpus",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        access_key_id="key",
+        secret_access_key="secret",
+    )
+
+    report = build_artifact_report_with_r2(
+        store.root,
+        config=config,
+        client=client,
+        prefixes=("inventory", "provisions", "coverage"),
+        release_scopes=(("us-co", "statute", "2026-04-30"),),
+    )
+
+    row = report.rows[0]
+    assert row.remote_inventory is True
+    assert row.remote_provisions is True
+    assert row.remote_coverage is True
+    assert row.coverage_complete is True
+    assert row.provision_count == 7
+    assert row.mismatch_reasons() == ()
 
 
 def test_sync_artifacts_to_r2_can_scope_uploads(tmp_path):

@@ -79,8 +79,18 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-mt",
+      "version": "2026-05-05"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-ne",
       "version": "2026-05-04"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-nv",
+      "version": "2026-05-05"
     },
     {
       "document_class": "statute",

@@ -112,6 +112,34 @@ sources:
     metadata:
       source_authority: Nebraska Legislature
 
+  - source_id: us-mt-code
+    jurisdiction: us-mt
+    document_class: statute
+    adapter: montana-code
+    source_url: https://mca.legmt.gov/bills/mca/index.html
+    version: "2026-05-05"
+    options:
+      source_year: 2025
+      source_as_of: "2026-03-24"
+      expression_date: "2026-03-24"
+      workers: 24
+    metadata:
+      source_authority: Montana Legislature
+
+  - source_id: us-nv-nrs
+    jurisdiction: us-nv
+    document_class: statute
+    adapter: nevada-nrs
+    source_url: https://www.leg.state.nv.us/NRS/
+    version: "2026-05-05"
+    options:
+      source_year: 2025
+      source_as_of: "2026-04-21"
+      expression_date: "2026-04-21"
+      workers: 16
+    metadata:
+      source_authority: Nevada Legislature
+
   - source_id: us-nc-statutes
     jurisdiction: us-nc
     document_class: statute
