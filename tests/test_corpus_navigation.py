@@ -290,6 +290,23 @@ def test_three_cycle_is_broken_at_one_node():
     assert sorted(depths.values()) == [0, 1, 2]
 
 
+def test_cycle_breaking_keeps_non_cycle_descendants_attached_and_deterministic():
+    records = [
+        _record("x", parent_citation_path="a"),
+        _record("a", parent_citation_path="b"),
+        _record("b", parent_citation_path="a"),
+    ]
+
+    first = [n.to_supabase_row() for n in build_navigation_nodes(records)]
+    second = [n.to_supabase_row() for n in build_navigation_nodes(reversed(records))]
+    parents = {row["path"]: row["parent_path"] for row in first}
+    depths = {row["path"]: row["depth"] for row in first}
+
+    assert first == second
+    assert parents == {"a": None, "b": "a", "x": "a"}
+    assert depths == {"a": 0, "b": 1, "x": 1}
+
+
 def test_filter_strands_child_whose_parent_is_in_another_scope():
     nodes = build_navigation_nodes(
         [

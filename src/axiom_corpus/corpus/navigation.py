@@ -225,19 +225,22 @@ def _break_parent_cycles(parent_paths: dict[str, str | None]) -> None:
 
     `_resolve_parent_path` rejects self-edges, but a record A whose parent is B
     while B's parent is A would still produce a two-cycle. Walking the chain
-    here catches that and any longer cycle. The first node in each cycle —
-    iteration-order — has its `parent_path` cleared so the cycle is broken at
-    a deterministic point and the rest of the chain reaches a root.
+    here catches that and any longer cycle. One stable member of each actual
+    cycle has its `parent_path` cleared so descendants outside the cycle remain
+    attached and repeated builds produce the same rows regardless of input
+    order.
     """
-    for start in list(parent_paths):
-        seen: set[str] = {start}
-        cursor = parent_paths.get(start)
+    for start in sorted(parent_paths):
+        chain: list[str] = []
+        seen_at: dict[str, int] = {}
+        cursor: str | None = start
         while cursor is not None and cursor in parent_paths:
-            if cursor in seen:
-                # `start` is the cycle entry from the caller's perspective.
-                parent_paths[start] = None
+            if cursor in seen_at:
+                cycle_nodes = chain[seen_at[cursor] :]
+                parent_paths[min(cycle_nodes)] = None
                 break
-            seen.add(cursor)
+            seen_at[cursor] = len(chain)
+            chain.append(cursor)
             cursor = parent_paths.get(cursor)
 
 

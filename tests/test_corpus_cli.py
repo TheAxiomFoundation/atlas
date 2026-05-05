@@ -453,6 +453,7 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                metadata={"status": "current"},
             ),
         ],
     )
@@ -486,11 +487,18 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
         )
 
     monkeypatch.setattr(cli, "fetch_provisions_for_navigation", fake_fetch_for_navigation)
+    monkeypatch.setattr(
+        cli,
+        "fetch_navigation_statuses",
+        lambda **kwargs: {"us-co/statute/title-39/article-22": "inactive"},
+    )
 
     def fake_writer(nodes, **kwargs):
         captured["node_paths"] = [n.path for n in nodes]
         captured["provision_ids"] = [n.provision_id for n in nodes]
+        captured["statuses"] = {n.path: n.status for n in nodes}
         captured["replace_scope"] = kwargs.get("replace_scope")
+        captured["replace_scopes"] = kwargs.get("replace_scopes")
         return NavigationSupabaseWriteReport(
             rows_total=len(captured["node_paths"]),
             rows_loaded=len(captured["node_paths"]),
@@ -508,6 +516,7 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
     assert exit_code == 0
     assert captured["fetch_scope"] == ("us-co", "statute")
     assert captured["replace_scope"] is True
+    assert captured["replace_scopes"] == (("us-co", "statute"),)
     assert set(captured["node_paths"]) == {
         "us-co/statute/title-39",
         "us-co/statute/title-39/article-22",
@@ -516,8 +525,117 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
         "11111111-1111-1111-1111-111111111111",
         "22222222-2222-2222-2222-222222222222",
     }
+    assert captured["statuses"] == {
+        "us-co/statute/title-39": "current",
+        "us-co/statute/title-39/article-22": "inactive",
+    }
     assert payload["navigation"]["rows_loaded"] == 2
     assert payload["navigation"]["scopes_replaced"] == [["us-co", "statute"]]
+
+
+def test_build_navigation_index_all_requires_input_source():
+    try:
+        main(["build-navigation-index", "--all", "--dry-run"])
+    except SystemExit as exc:
+        assert str(exc) == "build-navigation-index --all requires --provisions or --from-supabase"
+    else:
+        raise AssertionError("expected SystemExit")
+
+
+def test_build_navigation_index_passes_explicit_empty_replace_scope(capsys, monkeypatch):
+    import axiom_corpus.corpus.cli as cli
+    from axiom_corpus.corpus.navigation_supabase import NavigationSupabaseWriteReport
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(cli, "resolve_service_key", lambda *a, **kw: "service")
+    monkeypatch.setattr(cli, "fetch_provisions_for_navigation", lambda **kwargs: ())
+    monkeypatch.setattr(cli, "fetch_navigation_statuses", lambda **kwargs: {})
+
+    def fake_writer(nodes, **kwargs):
+        captured["nodes"] = tuple(nodes)
+        captured["replace_scopes"] = kwargs.get("replace_scopes")
+        return NavigationSupabaseWriteReport(
+            rows_total=0,
+            rows_loaded=0,
+            chunk_count=0,
+            scopes_replaced=(("us-co", "statute"),),
+            rows_deleted=3,
+            delete_chunk_count=1,
+        )
+
+    monkeypatch.setattr(cli, "write_navigation_nodes_to_supabase", fake_writer)
+
+    exit_code = main(
+        [
+            "build-navigation-index",
+            "--from-supabase",
+            "--jurisdiction",
+            "us-co",
+            "--doc-type",
+            "statute",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert captured["nodes"] == ()
+    assert captured["replace_scopes"] == (("us-co", "statute"),)
+    assert payload["nodes_built"] == 0
+    assert payload["supabase"]["rows_deleted"] == 3
+
+
+def test_build_navigation_index_from_supabase_preserves_existing_status(capsys, monkeypatch):
+    import axiom_corpus.corpus.cli as cli
+    from axiom_corpus.corpus.navigation_supabase import NavigationSupabaseWriteReport
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(cli, "resolve_service_key", lambda *a, **kw: "service")
+    monkeypatch.setattr(
+        cli,
+        "fetch_provisions_for_navigation",
+        lambda **kwargs: (
+            ProvisionRecord(
+                jurisdiction="us-co",
+                document_class="statute",
+                citation_path="us-co/statute/title-39",
+                id="11111111-1111-1111-1111-111111111111",
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "fetch_navigation_statuses",
+        lambda **kwargs: {"us-co/statute/title-39": "current"},
+    )
+
+    def fake_writer(nodes, **kwargs):
+        captured["statuses"] = {node.path: node.status for node in nodes}
+        return NavigationSupabaseWriteReport(
+            rows_total=1,
+            rows_loaded=1,
+            chunk_count=1,
+            scopes_replaced=(("us-co", "statute"),),
+            rows_deleted=0,
+            delete_chunk_count=0,
+        )
+
+    monkeypatch.setattr(cli, "write_navigation_nodes_to_supabase", fake_writer)
+
+    exit_code = main(
+        [
+            "build-navigation-index",
+            "--from-supabase",
+            "--jurisdiction",
+            "us-co",
+            "--doc-type",
+            "statute",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert captured["statuses"] == {"us-co/statute/title-39": "current"}
+    assert payload["nodes_built"] == 1
 
 
 def test_snapshot_provision_counts_cli_writes_supabase_counts(tmp_path, capsys, monkeypatch):

@@ -73,17 +73,19 @@ def write_navigation_nodes_to_supabase(
     chunk_size: int = 500,
     delete_chunk_size: int = 200,
     replace_scope: bool = True,
+    replace_scopes: Iterable[tuple[str, str]] | None = None,
     dry_run: bool = False,
     progress_stream: TextIO | None = None,
 ) -> NavigationSupabaseWriteReport:
     """Upsert navigation rows into `corpus.navigation_nodes`.
 
     When ``replace_scope`` is true the writer first deletes existing rows for
-    every ``(jurisdiction, doc_type)`` represented in the input. Scopes not in
-    the input set are never touched. The loader is otherwise idempotent: rerun
-    with the same input and the table converges on the same rows because IDs
-    are deterministic and unscoped rows would only arise if a provision was
-    deleted upstream — which is exactly what a scoped rebuild also fixes.
+    every ``(jurisdiction, doc_type)`` represented in the input, plus any
+    explicit ``replace_scopes``. Scopes not in those sets are never touched.
+    The loader is otherwise idempotent: rerun with the same input and the
+    table converges on the same rows because IDs are deterministic and
+    unscoped rows would only arise if a provision was deleted upstream —
+    which is exactly what a scoped rebuild also fixes.
     """
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
@@ -92,12 +94,16 @@ def write_navigation_nodes_to_supabase(
 
     materialized = tuple(nodes)
     grouped = group_nodes_by_scope(materialized)
+    scopes_to_replace = tuple(
+        sorted(set(grouped) | set(replace_scopes or ())) if replace_scope else ()
+    )
     rest_url = _rest_url(supabase_url)
 
     rows_deleted = 0
     delete_chunk_count = 0
     if replace_scope and not dry_run:
-        for (jurisdiction, doc_type), scope_nodes in grouped.items():
+        for jurisdiction, doc_type in scopes_to_replace:
+            scope_nodes = grouped.get((jurisdiction, doc_type), ())
             scope_rows_deleted, scope_chunks = _delete_scope_excluding_paths(
                 jurisdiction=jurisdiction,
                 doc_type=doc_type,
@@ -139,7 +145,7 @@ def write_navigation_nodes_to_supabase(
         rows_total=len(rows),
         rows_loaded=0 if dry_run else rows_loaded,
         chunk_count=chunk_count,
-        scopes_replaced=tuple(sorted(grouped.keys())) if replace_scope else (),
+        scopes_replaced=scopes_to_replace,
         rows_deleted=rows_deleted,
         delete_chunk_count=delete_chunk_count,
         dry_run=dry_run,
@@ -369,6 +375,60 @@ def fetch_provisions_for_navigation(
             )
         )
     return tuple(records)
+
+
+def fetch_navigation_statuses(
+    *,
+    service_key: str,
+    supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
+    jurisdiction: str | None = None,
+    doc_type: str | None = None,
+    page_size: int = 1_000,
+) -> dict[str, str]:
+    """Fetch existing non-empty navigation statuses keyed by path."""
+    rest_url = _rest_url(supabase_url)
+    statuses: dict[str, str] = {}
+    last_path: str | None = None
+    while True:
+        params: dict[str, str] = {
+            "select": "path,status",
+            "order": "path.asc",
+            "limit": str(page_size),
+        }
+        if jurisdiction is not None:
+            params["jurisdiction"] = f"eq.{jurisdiction}"
+        if doc_type is not None:
+            params["doc_type"] = f"eq.{doc_type}"
+        if last_path is not None:
+            params["path"] = f"gt.{last_path}"
+        query = urllib.parse.urlencode(params)
+        req = urllib.request.Request(
+            f"{rest_url}/navigation_nodes?{query}",
+            headers={
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}",
+                "Accept": "application/json",
+                "Accept-Profile": "corpus",
+                "User-Agent": USER_AGENT,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            page = json.loads(resp.read())
+        if not isinstance(page, list):
+            raise RuntimeError("unexpected Supabase navigation status response")
+        page_paths: list[str] = []
+        for raw in page:
+            if not isinstance(raw, dict) or not raw.get("path"):
+                continue
+            path = str(raw["path"])
+            page_paths.append(path)
+            status = raw.get("status")
+            if isinstance(status, str) and status.strip():
+                statuses[path] = status.strip()
+        if len(page_paths) < page_size:
+            break
+        last_path = page_paths[-1]
+    return statuses
 
 
 def _chunked_rows(

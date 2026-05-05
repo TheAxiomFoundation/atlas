@@ -6,6 +6,8 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Iterable
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -31,6 +33,7 @@ from axiom_corpus.corpus.navigation import (
     build_navigation_nodes,
 )
 from axiom_corpus.corpus.navigation_supabase import (
+    fetch_navigation_statuses,
     fetch_provisions_for_navigation,
     write_navigation_nodes_to_supabase,
 )
@@ -246,6 +249,7 @@ def _cmd_load_supabase(args: argparse.Namespace) -> int:
 
     if args.build_navigation and not args.dry_run and report.rows_loaded:
         navigation_records: list[ProvisionRecord] = []
+        existing_navigation_statuses: dict[str, str] = {}
         for jurisdiction, document_class in _provision_scopes(records):
             navigation_records.extend(
                 fetch_provisions_for_navigation(
@@ -255,13 +259,28 @@ def _cmd_load_supabase(args: argparse.Namespace) -> int:
                     doc_type=document_class,
                 )
             )
-        nodes = build_navigation_nodes(navigation_records)
+            existing_navigation_statuses.update(
+                fetch_navigation_statuses(
+                    service_key=service_key,
+                    supabase_url=args.supabase_url,
+                    jurisdiction=jurisdiction,
+                    doc_type=document_class,
+                )
+            )
+        nodes = build_navigation_nodes(
+            _apply_navigation_status_overrides(
+                navigation_records,
+                existing_statuses=existing_navigation_statuses,
+                overrides=records,
+            )
+        )
         navigation_report = write_navigation_nodes_to_supabase(
             nodes,
             service_key=service_key,
             supabase_url=args.supabase_url,
             chunk_size=args.chunk_size,
             replace_scope=True,
+            replace_scopes=_provision_scopes(records),
             dry_run=False,
             progress_stream=sys.stderr,
         )
@@ -290,10 +309,13 @@ def _cmd_snapshot_provision_counts(args: argparse.Namespace) -> int:
 
 
 def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
-    if not args.provisions and not args.from_supabase and not args.all:
+    if args.all and not args.provisions and not args.from_supabase:
+        raise SystemExit("build-navigation-index --all requires --provisions or --from-supabase")
+    if not args.provisions and not args.from_supabase:
         raise SystemExit("build-navigation-index requires --provisions, --from-supabase, or --all")
 
     records: tuple[ProvisionRecord, ...]
+    existing_navigation_statuses: dict[str, str] = {}
     if args.provisions:
         loaded: list[ProvisionRecord] = []
         for path in args.provisions:
@@ -312,10 +334,20 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
             jurisdiction=args.jurisdiction,
             doc_type=args.doc_type,
         )
+        existing_navigation_statuses = fetch_navigation_statuses(
+            service_key=service_key_for_fetch,
+            supabase_url=args.supabase_url,
+            jurisdiction=args.jurisdiction,
+            doc_type=args.doc_type,
+        )
         sources_used = [f"supabase:{args.supabase_url}"]
 
     nodes: tuple[NavigationNode, ...] = build_navigation_nodes(
-        records,
+        _apply_navigation_status_overrides(
+            records,
+            existing_statuses=existing_navigation_statuses,
+            overrides=(),
+        ),
         jurisdiction=args.jurisdiction,
         document_class=args.doc_type,
     )
@@ -354,6 +386,7 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
         supabase_url=args.supabase_url,
         chunk_size=args.chunk_size,
         replace_scope=not args.no_replace_scope,
+        replace_scopes=_explicit_navigation_replace_scopes(args),
         dry_run=args.dry_run,
         progress_stream=sys.stderr,
     )
@@ -365,6 +398,46 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
 
 def _provision_scopes(records: tuple[ProvisionRecord, ...]) -> tuple[tuple[str, str], ...]:
     return tuple(sorted({(record.jurisdiction, record.document_class) for record in records}))
+
+
+def _explicit_navigation_replace_scopes(args: argparse.Namespace) -> tuple[tuple[str, str], ...]:
+    if args.jurisdiction and args.doc_type:
+        return ((args.jurisdiction, args.doc_type),)
+    return ()
+
+
+def _apply_navigation_status_overrides(
+    records: Iterable[ProvisionRecord],
+    *,
+    existing_statuses: dict[str, str] | None = None,
+    overrides: Iterable[ProvisionRecord],
+) -> tuple[ProvisionRecord, ...]:
+    statuses: dict[str, str | None] = dict(existing_statuses or {})
+    statuses.update({record.citation_path: _navigation_status(record) for record in overrides})
+    if not statuses:
+        return tuple(records)
+    updated: list[ProvisionRecord] = []
+    for record in records:
+        if record.citation_path not in statuses:
+            updated.append(record)
+            continue
+        status = statuses[record.citation_path]
+        metadata = dict(record.metadata or {})
+        if status is None:
+            metadata.pop("status", None)
+        else:
+            metadata["status"] = status
+        updated.append(replace(record, metadata=metadata))
+    return tuple(updated)
+
+
+def _navigation_status(record: ProvisionRecord) -> str | None:
+    if not record.metadata:
+        return None
+    status = record.metadata.get("status")
+    if isinstance(status, str) and status.strip():
+        return status.strip()
+    return None
 
 
 def _single_provision_scope(records: tuple[ProvisionRecord, ...]) -> tuple[str, str]:

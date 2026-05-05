@@ -7,6 +7,7 @@ import json
 from axiom_corpus.corpus.models import ProvisionRecord
 from axiom_corpus.corpus.navigation import build_navigation_nodes
 from axiom_corpus.corpus.navigation_supabase import (
+    fetch_navigation_statuses,
     fetch_provisions_for_navigation,
     write_navigation_nodes_to_supabase,
 )
@@ -144,6 +145,44 @@ def test_write_navigation_nodes_replace_scope_only_touches_input_scopes(monkeypa
     assert seen_scope_filters == [("us-co", "statute")]
 
 
+def test_write_navigation_nodes_can_replace_explicit_empty_scope(monkeypatch):
+    import axiom_corpus.corpus.navigation_supabase as module
+
+    calls: list[tuple[str, str]] = []
+    fetch_responses = iter(
+        [
+            json.dumps(
+                [
+                    {"path": "us-co/statute/old-title"},
+                    {"path": "us-co/statute/old-title/old-section"},
+                ]
+            ).encode(),
+        ]
+    )
+
+    def fake_urlopen(req, timeout):  # noqa: ARG001
+        method = getattr(req, "method", None) or "GET"
+        calls.append((req.full_url, method))
+        if "/navigation_nodes?" in req.full_url and method == "GET":
+            return _FakeResponse(next(fetch_responses))
+        return _FakeResponse()
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", fake_urlopen)
+
+    report = write_navigation_nodes_to_supabase(
+        (),
+        service_key="service",
+        supabase_url="https://example.supabase.co",
+        replace_scopes=(("us-co", "statute"),),
+    )
+
+    assert any(method == "DELETE" for _, method in calls)
+    assert report.rows_total == 0
+    assert report.rows_loaded == 0
+    assert report.rows_deleted == 2
+    assert report.scopes_replaced == (("us-co", "statute"),)
+
+
 def test_fetch_provisions_for_navigation_resolves_parent_paths(monkeypatch):
     import axiom_corpus.corpus.navigation_supabase as module
 
@@ -203,3 +242,37 @@ def test_fetch_provisions_for_navigation_resolves_parent_paths(monkeypatch):
         == "us-co/statute/title-39"
     )
     assert by_path["us-co/statute/title-39/article-22"].has_rulespec is True
+
+
+def test_fetch_navigation_statuses_reads_non_empty_statuses(monkeypatch):
+    import axiom_corpus.corpus.navigation_supabase as module
+
+    pages = iter(
+        [
+            json.dumps(
+                [
+                    {"path": "us-co/statute/a", "status": " current "},
+                    {"path": "us-co/statute/b", "status": None},
+                ]
+            ).encode(),
+            b"[]",
+        ]
+    )
+
+    def fake_urlopen(req, timeout):  # noqa: ARG001
+        assert "select=path%2Cstatus" in req.full_url
+        assert "jurisdiction=eq.us-co" in req.full_url
+        assert "doc_type=eq.statute" in req.full_url
+        return _FakeResponse(next(pages))
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", fake_urlopen)
+
+    statuses = fetch_navigation_statuses(
+        service_key="service",
+        supabase_url="https://example.supabase.co",
+        jurisdiction="us-co",
+        doc_type="statute",
+        page_size=2,
+    )
+
+    assert statuses == {"us-co/statute/a": "current"}
