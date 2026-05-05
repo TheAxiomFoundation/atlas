@@ -46,6 +46,9 @@ MINNESOTA_USER_AGENT = "axiom-corpus/0.1"
 NEBRASKA_STATUTES_BASE_URL = "https://nebraskalegislature.gov/laws"
 NEBRASKA_STATUTES_SOURCE_FORMAT = "nebraska-revised-statutes-html"
 NEBRASKA_USER_AGENT = "axiom-corpus/0.1"
+WASHINGTON_RCW_BASE_URL = "https://app.leg.wa.gov/RCW/default.aspx"
+WASHINGTON_RCW_SOURCE_FORMAT = "washington-rcw-html"
+WASHINGTON_USER_AGENT = "axiom-corpus/0.1"
 CALIFORNIA_LEGINFO_BULK_URL = "https://downloads.leginfo.legislature.ca.gov/pubinfo_2025.zip"
 CALIFORNIA_LEGINFO_BASE_URL = "https://leginfo.legislature.ca.gov"
 CALIFORNIA_BULK_SOURCE_FORMAT = "california-leginfo-bulk"
@@ -388,6 +391,68 @@ class _NebraskaSection:
     @property
     def citation_path(self) -> str:
         return self.target.citation_path
+
+
+@dataclass(frozen=True)
+class _WashingtonTitle:
+    num: str
+    heading: str | None
+    href: str
+    ordinal: int
+
+    @property
+    def source_url(self) -> str:
+        return _washington_cite_url(self.num)
+
+    @property
+    def citation_path(self) -> str:
+        return f"us-wa/statute/{self.num}"
+
+
+@dataclass(frozen=True)
+class _WashingtonChapter:
+    title: _WashingtonTitle
+    num: str
+    heading: str | None
+    href: str
+    ordinal: int
+
+    @property
+    def source_url(self) -> str:
+        return _washington_cite_url(self.num)
+
+    @property
+    def full_source_url(self) -> str:
+        return f"{_washington_cite_url(self.num)}&full=true"
+
+    @property
+    def citation_path(self) -> str:
+        return f"us-wa/statute/{self.title.num}/{self.num}"
+
+
+@dataclass(frozen=True)
+class _WashingtonSection:
+    chapter: _WashingtonChapter
+    section: str
+    heading: str | None
+    body: str | None
+    status: str
+    source_history: tuple[str, ...]
+    notes: tuple[str, ...]
+    references_to: tuple[str, ...]
+    ordinal: int
+
+    @property
+    def source_url(self) -> str:
+        return _washington_cite_url(self.section)
+
+    @property
+    def source_id(self) -> str:
+        return f"section-{self.section}"
+
+    @property
+    def citation_path(self) -> str:
+        return f"us-wa/statute/{self.chapter.title.num}/{self.chapter.num}/{self.section}"
 
 
 @dataclass(frozen=True)
@@ -1807,6 +1872,259 @@ def extract_nebraska_revised_statutes(
         coverage_path=coverage_path,
         coverage=coverage,
         source_paths=tuple(source_paths),
+        errors=tuple(errors),
+    )
+
+
+def extract_washington_rcw(
+    store: CorpusArtifactStore,
+    *,
+    version: str,
+    source_dir: str | Path | None = None,
+    source_as_of: str | None = None,
+    expression_date: date | str | None = None,
+    only_title: str | None = None,
+    limit: int | None = None,
+    workers: int = 4,
+    download_dir: str | Path | None = None,
+) -> StateStatuteExtractReport:
+    """Snapshot official Revised Code of Washington HTML and extract provisions."""
+    jurisdiction = "us-wa"
+    only_cite = _washington_cite_filter(only_title)
+    only_title_num = _washington_title_from_cite(only_cite) if only_cite else None
+    only_chapter_num = only_cite if only_cite and _washington_cite_depth(only_cite) == 2 else None
+    run_id = (
+        state_run_id(version, jurisdiction=jurisdiction, only_title=only_cite, limit=limit)
+        if only_cite or limit is not None
+        else version
+    )
+    source_root = Path(source_dir) if source_dir is not None else None
+    download_root = Path(download_dir) if download_dir is not None and source_root is None else None
+    source_as_of_text = source_as_of or version
+    expression_date_text = _date_text(expression_date, source_as_of_text)
+    session = _washington_session()
+
+    index_relative = "washington-rcw-html/index.html"
+    index_bytes = _load_washington_html(
+        session,
+        source_root,
+        download_root,
+        relative_name=index_relative,
+        url=WASHINGTON_RCW_BASE_URL,
+    )
+    index_path = store.source_path(jurisdiction, DocumentClass.STATUTE, run_id, index_relative)
+    store.write_bytes(index_path, index_bytes)
+    source_paths: list[Path] = [index_path]
+
+    titles = _parse_washington_titles(index_bytes)
+    if only_title_num is not None:
+        titles = tuple(title for title in titles if title.num == only_title_num)
+    if not titles:
+        raise ValueError(f"no Revised Code of Washington titles selected for filter: {only_title!r}")
+
+    items: list[SourceInventoryItem] = []
+    records: list[ProvisionRecord] = []
+    chapters: list[_WashingtonChapter] = []
+    errors: list[str] = []
+    remaining = limit
+    title_count = 0
+    container_count = 0
+    section_count = 0
+    skipped_source_count = 0
+    seen_citation_paths: set[str] = set()
+
+    for title in titles:
+        if remaining is not None and remaining <= 0:
+            break
+        title_relative = _washington_title_relative(title)
+        try:
+            title_bytes = _load_washington_html(
+                session,
+                source_root,
+                download_root,
+                relative_name=title_relative,
+                url=title.source_url,
+            )
+        except (OSError, requests.RequestException) as exc:
+            errors.append(f"title {title.num}: {exc}")
+            continue
+        title_path = store.source_path(
+            jurisdiction,
+            DocumentClass.STATUTE,
+            run_id,
+            title_relative,
+        )
+        title_sha = store.write_bytes(title_path, title_bytes)
+        source_paths.append(title_path)
+        title_source_key = _state_source_key(jurisdiction, run_id, title_relative)
+        title_with_heading = _WashingtonTitle(
+            num=title.num,
+            heading=_washington_title_heading(title_bytes) or title.heading,
+            href=title.href,
+            ordinal=title.ordinal,
+        )
+        title_container = _washington_title_container(
+            title_with_heading,
+            source_path=title_source_key,
+            sha256=title_sha,
+        )
+        if title_container.citation_path not in seen_citation_paths:
+            seen_citation_paths.add(title_container.citation_path)
+            items.append(_container_inventory_item(title_container))
+            records.append(
+                _container_provision(
+                    title_container,
+                    version=run_id,
+                    source_as_of=source_as_of_text,
+                    expression_date=expression_date_text,
+                )
+            )
+            title_count += 1
+            container_count += 1
+            if remaining is not None:
+                remaining -= 1
+
+        title_chapters = _parse_washington_chapters(title_bytes, title=title_with_heading)
+        if only_chapter_num is not None:
+            title_chapters = tuple(
+                chapter for chapter in title_chapters if chapter.num == only_chapter_num
+            )
+        if not title_chapters:
+            errors.append(f"title {title.num}: no chapters parsed")
+        chapters.extend(title_chapters)
+
+    if not chapters and (limit is None or remaining is None or remaining > 0):
+        raise ValueError(f"no Revised Code of Washington chapters selected for filter: {only_title!r}")
+
+    chapters_to_fetch = tuple(chapters)
+    if remaining is not None:
+        chapters_to_fetch = chapters_to_fetch[: max(remaining, 0)]
+    for chapter, chapter_bytes, error in _iter_washington_chapter_sources(
+        source_root,
+        download_root,
+        chapters_to_fetch,
+        workers=workers,
+    ):
+        if remaining is not None and remaining <= 0:
+            break
+        if error is not None or chapter_bytes is None:
+            errors.append(f"chapter {chapter.num}: {error or 'unknown source error'}")
+            continue
+        chapter_relative = _washington_chapter_relative(chapter)
+        chapter_path = store.source_path(
+            jurisdiction,
+            DocumentClass.STATUTE,
+            run_id,
+            chapter_relative,
+        )
+        chapter_sha = store.write_bytes(chapter_path, chapter_bytes)
+        source_paths.append(chapter_path)
+        chapter_source_key = _state_source_key(jurisdiction, run_id, chapter_relative)
+        chapter_with_heading = _WashingtonChapter(
+            title=chapter.title,
+            num=chapter.num,
+            heading=_washington_chapter_heading(chapter_bytes) or chapter.heading,
+            href=chapter.href,
+            ordinal=chapter.ordinal,
+        )
+        chapter_container = _washington_chapter_container(
+            chapter_with_heading,
+            source_path=chapter_source_key,
+            sha256=chapter_sha,
+        )
+        if chapter_container.citation_path not in seen_citation_paths:
+            seen_citation_paths.add(chapter_container.citation_path)
+            items.append(_container_inventory_item(chapter_container))
+            records.append(
+                _container_provision(
+                    chapter_container,
+                    version=run_id,
+                    source_as_of=source_as_of_text,
+                    expression_date=expression_date_text,
+                )
+            )
+            container_count += 1
+            if remaining is not None:
+                remaining -= 1
+
+        sections = _parse_washington_chapter_sections(
+            chapter_bytes,
+            chapter=chapter_with_heading,
+        )
+        if not sections:
+            if _washington_chapter_without_sections(chapter_bytes):
+                skipped_source_count += 1
+            else:
+                errors.append(f"chapter {chapter.num}: no sections parsed")
+        for section in sections:
+            if remaining is not None and remaining <= 0:
+                break
+            if section.citation_path in seen_citation_paths:
+                continue
+            seen_citation_paths.add(section.citation_path)
+            items.append(
+                SourceInventoryItem(
+                    citation_path=section.citation_path,
+                    source_url=section.source_url,
+                    source_path=chapter_source_key,
+                    source_format=WASHINGTON_RCW_SOURCE_FORMAT,
+                    sha256=chapter_sha,
+                    metadata={
+                        "kind": "section",
+                        "title": section.chapter.title.num,
+                        "chapter": section.chapter.num,
+                        "section": section.section,
+                        "heading": section.heading,
+                        "status": section.status,
+                        "source_history": list(section.source_history),
+                        "notes": list(section.notes),
+                        "parent_citation_path": section.chapter.citation_path,
+                        "references_to": list(section.references_to),
+                        "source_id": section.source_id,
+                    },
+                )
+            )
+            records.append(
+                _washington_section_provision(
+                    section,
+                    version=run_id,
+                    source_path=chapter_source_key,
+                    source_as_of=source_as_of_text,
+                    expression_date=expression_date_text,
+                )
+            )
+            section_count += 1
+            if remaining is not None:
+                remaining -= 1
+
+    if not items:
+        raise ValueError("no Revised Code of Washington provisions extracted")
+
+    inventory_path = store.inventory_path(jurisdiction, DocumentClass.STATUTE, run_id)
+    store.write_inventory(inventory_path, items)
+    provisions_path = store.provisions_path(jurisdiction, DocumentClass.STATUTE, run_id)
+    store.write_provisions(provisions_path, records)
+    coverage = compare_provision_coverage(
+        tuple(items),
+        tuple(records),
+        jurisdiction=jurisdiction,
+        document_class=DocumentClass.STATUTE.value,
+        version=run_id,
+    )
+    coverage_path = store.coverage_path(jurisdiction, DocumentClass.STATUTE, run_id)
+    store.write_json(coverage_path, coverage.to_mapping())
+    return StateStatuteExtractReport(
+        jurisdiction=jurisdiction,
+        title_count=title_count,
+        container_count=container_count,
+        section_count=section_count,
+        provisions_written=len(records),
+        inventory_path=inventory_path,
+        provisions_path=provisions_path,
+        coverage_path=coverage_path,
+        coverage=coverage,
+        source_paths=tuple(source_paths),
+        skipped_source_count=skipped_source_count,
         errors=tuple(errors),
     )
 
@@ -3731,6 +4049,509 @@ def _nebraska_section_provision(
             "section": section.section,
             "status": section.status,
             "source_history": list(section.source_history),
+            "references_to": list(section.references_to),
+        },
+    )
+
+
+def _washington_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update({"User-Agent": WASHINGTON_USER_AGENT})
+    return session
+
+
+def _load_washington_html(
+    session: requests.Session,
+    source_root: Path | None,
+    download_root: Path | None,
+    *,
+    relative_name: str,
+    url: str,
+) -> bytes:
+    if source_root is not None:
+        return (source_root / relative_name).read_bytes()
+    if download_root is not None:
+        cached_path = download_root / relative_name
+        if cached_path.exists():
+            return cached_path.read_bytes()
+    response: requests.Response | None = None
+    for attempt in range(5):
+        response = session.get(url, timeout=90)
+        if response.status_code != 429:
+            response.raise_for_status()
+            content = response.content
+            if download_root is not None:
+                path = download_root / relative_name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+            return content
+        retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
+        time.sleep(retry_after if retry_after is not None else min(2**attempt, 30))
+    assert response is not None
+    response.raise_for_status()
+    return response.content
+
+
+def _parse_washington_titles(data: bytes) -> tuple[_WashingtonTitle, ...]:
+    soup = BeautifulSoup(data.decode("utf-8", errors="replace"), "html.parser")
+    titles: list[_WashingtonTitle] = []
+    seen: set[str] = set()
+    for link in soup.select('a[href*="default.aspx"]'):
+        if not isinstance(link, Tag):
+            continue
+        href = str(link.get("href") or "")
+        cite = _washington_cite_from_href(href)
+        if cite is None or _washington_cite_depth(cite) != 1 or cite in seen:
+            continue
+        heading = _washington_listing_heading(link) or _washington_link_heading(
+            link.get_text(" ", strip=True),
+            prefix="Title",
+            cite=cite,
+        )
+        titles.append(
+            _WashingtonTitle(
+                num=cite,
+                heading=heading,
+                href=href,
+                ordinal=_section_ordinal(cite) or len(titles),
+            )
+        )
+        seen.add(cite)
+    return tuple(sorted(titles, key=lambda title: title.ordinal))
+
+
+def _parse_washington_chapters(
+    data: bytes,
+    *,
+    title: _WashingtonTitle,
+) -> tuple[_WashingtonChapter, ...]:
+    soup = BeautifulSoup(data.decode("utf-8", errors="replace"), "html.parser")
+    chapters: list[_WashingtonChapter] = []
+    seen: set[str] = set()
+    for link in soup.select("#contentWrapper a[href*=\"default.aspx\"]"):
+        if not isinstance(link, Tag):
+            continue
+        href = str(link.get("href") or "")
+        cite = _washington_cite_from_href(href)
+        if (
+            cite is None
+            or _washington_cite_depth(cite) != 2
+            or _washington_title_from_cite(cite) != title.num
+            or cite in seen
+        ):
+            continue
+        heading = _washington_listing_heading(link) or _washington_link_heading(
+            link.get_text(" ", strip=True),
+            prefix="Chapter",
+            cite=cite,
+        )
+        chapters.append(
+            _WashingtonChapter(
+                title=title,
+                num=cite,
+                heading=heading,
+                href=href,
+                ordinal=_section_ordinal(cite) or len(chapters),
+            )
+        )
+        seen.add(cite)
+    return tuple(sorted(chapters, key=lambda chapter: chapter.ordinal))
+
+
+def _iter_washington_chapter_sources(
+    source_root: Path | None,
+    download_root: Path | None,
+    chapters: tuple[_WashingtonChapter, ...],
+    *,
+    workers: int,
+) -> Iterator[tuple[_WashingtonChapter, bytes | None, str | None]]:
+    if source_root is not None:
+        for chapter in chapters:
+            try:
+                yield chapter, (source_root / _washington_chapter_relative(chapter)).read_bytes(), None
+            except OSError as exc:
+                yield chapter, None, str(exc)
+        return
+
+    worker_count = max(1, workers)
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        yield from executor.map(
+            lambda chapter: _load_washington_chapter_source(download_root, chapter),
+            chapters,
+        )
+
+
+def _load_washington_chapter_source(
+    download_root: Path | None,
+    chapter: _WashingtonChapter,
+) -> tuple[_WashingtonChapter, bytes | None, str | None]:
+    try:
+        session = _washington_session()
+        data = _load_washington_html(
+            session,
+            None,
+            download_root,
+            relative_name=_washington_chapter_relative(chapter),
+            url=chapter.full_source_url,
+        )
+        return chapter, data, None
+    except (OSError, requests.RequestException) as exc:
+        return chapter, None, str(exc)
+
+
+def _parse_washington_chapter_sections(
+    data: bytes,
+    *,
+    chapter: _WashingtonChapter,
+) -> tuple[_WashingtonSection, ...]:
+    soup = BeautifulSoup(data.decode("utf-8", errors="replace"), "html.parser")
+    sections: list[_WashingtonSection] = []
+    seen: set[str] = set()
+    for ordinal, anchor in enumerate(
+        soup.select("#ContentPlaceHolder1_pnlExpanded a[name]"),
+    ):
+        if not isinstance(anchor, Tag):
+            continue
+        section = _washington_cite_filter(str(anchor.get("name") or ""), strict=False)
+        if (
+            section is None
+            or _washington_cite_depth(section) != 3
+            or not _washington_section_in_chapter(section, chapter.num)
+            or section in seen
+        ):
+            continue
+        parsed = _parse_washington_section(anchor, chapter=chapter, ordinal=ordinal)
+        if parsed is not None:
+            sections.append(parsed)
+            seen.add(section)
+    return tuple(sections)
+
+
+def _parse_washington_section(
+    anchor: Tag,
+    *,
+    chapter: _WashingtonChapter,
+    ordinal: int,
+) -> _WashingtonSection | None:
+    section = _washington_cite_filter(str(anchor.get("name") or ""), strict=False)
+    root = anchor.find_parent("span")
+    if section is None or not isinstance(root, Tag):
+        return None
+    divs = tuple(
+        child
+        for child in root.children
+        if isinstance(child, Tag) and child.name.lower() == "div"
+    )
+    if len(divs) < 2:
+        return None
+    heading = _washington_heading_text(divs[1])
+    status = "repealed" if _washington_is_repealed_heading(heading) else "active"
+    return _WashingtonSection(
+        chapter=chapter,
+        section=section,
+        heading=heading,
+        body=_washington_section_body(divs),
+        status=status,
+        source_history=_washington_source_history(divs),
+        notes=_washington_notes(divs),
+        references_to=_washington_references(root, self_path=_washington_citation_path(section)),
+        ordinal=_section_ordinal(section) or ordinal,
+    )
+
+
+def _washington_title_heading(data: bytes) -> str | None:
+    soup = BeautifulSoup(data.decode("utf-8", errors="replace"), "html.parser")
+    heading = soup.find("h2")
+    if not isinstance(heading, Tag):
+        return None
+    return _clean_text(heading.get_text(" ", strip=True)).rstrip(".") or None
+
+
+def _washington_chapter_heading(data: bytes) -> str | None:
+    return _washington_title_heading(data)
+
+
+def _washington_chapter_without_sections(data: bytes) -> bool:
+    soup = BeautifulSoup(data.decode("utf-8", errors="replace"), "html.parser")
+    expanded = soup.select_one("#ContentPlaceHolder1_pnlExpanded")
+    return not (isinstance(expanded, Tag) and expanded.select("a[name]"))
+
+
+def _washington_listing_heading(link: Tag) -> str | None:
+    row = link.find_parent("tr")
+    if not isinstance(row, Tag):
+        return None
+    cells = row.find_all("td", recursive=False)
+    if len(cells) < 2:
+        return None
+    heading = _clean_text(cells[-1].get_text(" ", strip=True)).rstrip(".")
+    return heading or None
+
+
+def _washington_link_heading(text: str, *, prefix: str, cite: str) -> str | None:
+    cleaned = _clean_text(text)
+    match = re.match(rf"^{re.escape(prefix)}\s+{re.escape(cite)}\s*(?P<heading>.*)$", cleaned, re.I)
+    if not match:
+        return cleaned or None
+    return _clean_text(match.group("heading").lstrip("-:")).rstrip(".") or None
+
+
+def _washington_heading_text(tag: Tag) -> str | None:
+    return _clean_text(tag.get_text(" ", strip=True)).rstrip(".") or None
+
+
+def _washington_section_body(divs: tuple[Tag, ...]) -> str | None:
+    lines: list[str] = []
+    for div in divs[2:]:
+        if _washington_is_source_history_div(div) or _washington_is_notes_heading_div(div):
+            break
+        child_lines = [
+            _clean_text(child.get_text(" ", strip=True))
+            for child in div.find_all("div", recursive=False)
+            if isinstance(child, Tag)
+        ]
+        if child_lines:
+            lines.extend(line for line in child_lines if line)
+            continue
+        text = _clean_text(div.get_text(" ", strip=True))
+        if text:
+            lines.append(text)
+    body = "\n".join(lines).strip()
+    return body or None
+
+
+def _washington_source_history(divs: tuple[Tag, ...]) -> tuple[str, ...]:
+    for div in divs:
+        if not _washington_is_source_history_div(div):
+            continue
+        text = _clean_text(div.get_text(" ", strip=True))
+        return (text,) if text else ()
+    return ()
+
+
+def _washington_notes(divs: tuple[Tag, ...]) -> tuple[str, ...]:
+    notes: list[str] = []
+    in_notes = False
+    for div in divs:
+        if _washington_is_notes_heading_div(div):
+            in_notes = True
+            continue
+        if not in_notes:
+            continue
+        text = _clean_text(div.get_text(" ", strip=True))
+        if text:
+            notes.append(text)
+    return tuple(notes)
+
+
+def _washington_is_source_history_div(tag: Tag) -> bool:
+    style = str(tag.get("style") or "").replace(" ", "").lower()
+    return "margin-top:15pt" in style
+
+
+def _washington_is_notes_heading_div(tag: Tag) -> bool:
+    text = _clean_text(tag.get_text(" ", strip=True)).strip(":").lower()
+    return text == "notes"
+
+
+def _washington_is_repealed_heading(heading: str | None) -> bool:
+    text = (heading or "").lower()
+    return text.startswith("repealed") or text.startswith("[repealed")
+
+
+def _washington_references(root: Tag, *, self_path: str) -> tuple[str, ...]:
+    refs: set[str] = set()
+    for link in root.find_all("a"):
+        if not isinstance(link, Tag):
+            continue
+        ref = _washington_href_to_citation_path(str(link.get("href") or ""))
+        if ref and ref != self_path:
+            refs.add(ref)
+    return tuple(sorted(refs))
+
+
+def _washington_href_to_citation_path(href: str) -> str | None:
+    cite = _washington_cite_from_href(href)
+    if cite is None:
+        return None
+    return _washington_citation_path(cite)
+
+
+def _washington_citation_path(cite: str) -> str:
+    depth = _washington_cite_depth(cite)
+    title = _washington_title_from_cite(cite)
+    if depth == 1:
+        return f"us-wa/statute/{title}"
+    chapter = _washington_chapter_from_cite(cite)
+    if depth == 2:
+        return f"us-wa/statute/{title}/{chapter}"
+    return f"us-wa/statute/{title}/{chapter}/{cite}"
+
+
+def _washington_cite_from_href(href: str) -> str | None:
+    parsed = urlparse(href)
+    query = {key.lower(): value for key, value in parse_qs(parsed.query).items()}
+    raw = query.get("cite", [None])[0] or (parsed.fragment if parsed.fragment else None)
+    return _washington_cite_filter(raw, strict=False)
+
+
+def _washington_cite_filter(value: str | None, *, strict: bool = True) -> str | None:
+    if value is None:
+        return None
+    text = unquote_plus(value).strip()
+    text = re.sub(r"^(?:title|chapter|rcw)\s+", "", text, flags=re.I)
+    text = re.sub(r"\s+RCW$", "", text, flags=re.I).strip()
+    title_pattern = r"\d+[A-Za-z]?"
+    chapter_pattern = rf"{title_pattern}\.\d+[A-Za-z]?"
+    section_pattern = rf"{chapter_pattern}(?:\.|-)\d+[A-Za-z]?"
+    if not re.fullmatch(rf"(?:{title_pattern}|{chapter_pattern}|{section_pattern})", text):
+        if strict and value.strip():
+            raise ValueError(f"invalid Revised Code of Washington citation: {value!r}")
+        return None
+    return _washington_normalize_cite(text)
+
+
+def _washington_normalize_cite(cite: str) -> str:
+    parts = cite.split(".")
+    first = re.match(r"0*(\d+)([A-Za-z]?)$", parts[0])
+    if first:
+        parts[0] = f"{int(first.group(1))}{first.group(2).upper()}"
+    return ".".join(parts)
+
+
+def _washington_cite_depth(cite: str) -> int:
+    if "-" in cite:
+        return 3
+    return cite.count(".") + 1
+
+
+def _washington_title_from_cite(cite: str) -> str:
+    return cite.split(".", 1)[0]
+
+
+def _washington_chapter_from_cite(cite: str) -> str:
+    if "-" in cite:
+        return cite.split("-", 1)[0]
+    parts = cite.split(".")
+    if len(parts) < 2:
+        return cite
+    return ".".join(parts[:2])
+
+
+def _washington_section_in_chapter(section: str, chapter: str) -> bool:
+    return section.startswith(f"{chapter}.") or section.startswith(f"{chapter}-")
+
+
+def _washington_title_relative(title: _WashingtonTitle) -> str:
+    return f"washington-rcw-html/titles/title-{_clean_path_token(title.num)}.html"
+
+
+def _washington_chapter_relative(chapter: _WashingtonChapter) -> str:
+    return f"washington-rcw-html/chapters/chapter-{_clean_path_token(chapter.num)}-full.html"
+
+
+def _washington_cite_url(cite: str) -> str:
+    return f"{WASHINGTON_RCW_BASE_URL}?cite={quote(cite, safe='.')}"
+
+
+def _washington_title_container(
+    title: _WashingtonTitle,
+    *,
+    source_path: str,
+    sha256: str,
+) -> _StateContainer:
+    return _StateContainer(
+        jurisdiction="us-wa",
+        title=title.num,
+        kind="title",
+        num=title.num,
+        heading=title.heading,
+        citation_path=title.citation_path,
+        parent_citation_path=None,
+        level=0,
+        ordinal=_section_ordinal(title.num) or title.ordinal,
+        source_path=source_path,
+        source_url=title.source_url,
+        source_id=f"title-{title.num}",
+        source_format=WASHINGTON_RCW_SOURCE_FORMAT,
+        sha256=sha256,
+        metadata={
+            "title": title.num,
+            "source_url": title.source_url,
+        },
+    )
+
+
+def _washington_chapter_container(
+    chapter: _WashingtonChapter,
+    *,
+    source_path: str,
+    sha256: str,
+) -> _StateContainer:
+    return _StateContainer(
+        jurisdiction="us-wa",
+        title=chapter.title.num,
+        kind="chapter",
+        num=chapter.num,
+        heading=chapter.heading,
+        citation_path=chapter.citation_path,
+        parent_citation_path=chapter.title.citation_path,
+        level=1,
+        ordinal=_section_ordinal(chapter.num) or chapter.ordinal,
+        source_path=source_path,
+        source_url=chapter.full_source_url,
+        source_id=f"chapter-{chapter.num}",
+        source_format=WASHINGTON_RCW_SOURCE_FORMAT,
+        sha256=sha256,
+        metadata={
+            "title": chapter.title.num,
+            "chapter": chapter.num,
+            "source_url": chapter.full_source_url,
+        },
+    )
+
+
+def _washington_section_provision(
+    section: _WashingtonSection,
+    *,
+    version: str,
+    source_path: str,
+    source_as_of: str,
+    expression_date: str,
+) -> ProvisionRecord:
+    return ProvisionRecord(
+        id=deterministic_provision_id(section.citation_path),
+        jurisdiction="us-wa",
+        document_class=DocumentClass.STATUTE.value,
+        citation_path=section.citation_path,
+        citation_label=f"RCW {section.section}",
+        heading=section.heading,
+        body=section.body,
+        version=version,
+        source_url=section.source_url,
+        source_path=source_path,
+        source_id=section.source_id,
+        source_format=WASHINGTON_RCW_SOURCE_FORMAT,
+        source_as_of=source_as_of,
+        expression_date=expression_date,
+        parent_citation_path=section.chapter.citation_path,
+        parent_id=deterministic_provision_id(section.chapter.citation_path),
+        level=2,
+        ordinal=section.ordinal,
+        kind="section",
+        legal_identifier=f"RCW {section.section}",
+        identifiers={
+            "washington:title": section.chapter.title.num,
+            "washington:chapter": section.chapter.num,
+            "washington:section": section.section,
+        },
+        metadata={
+            "title": section.chapter.title.num,
+            "chapter": section.chapter.num,
+            "section": section.section,
+            "status": section.status,
+            "source_history": list(section.source_history),
+            "notes": list(section.notes),
             "references_to": list(section.references_to),
         },
     )

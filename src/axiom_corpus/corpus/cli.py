@@ -37,6 +37,7 @@ from axiom_corpus.corpus.r2 import (
 )
 from axiom_corpus.corpus.release_quality import validate_release
 from axiom_corpus.corpus.releases import ReleaseManifest, resolve_release_manifest_path
+from axiom_corpus.corpus.state_adapters.illinois import extract_illinois_ilcs
 from axiom_corpus.corpus.state_statute_completion import (
     build_state_statute_completion_report,
 )
@@ -52,12 +53,14 @@ from axiom_corpus.corpus.states import (
     extract_ohio_revised_code,
     extract_state_html_directory,
     extract_texas_tcas,
+    extract_washington_rcw,
 )
 from axiom_corpus.corpus.supabase import (
     DEFAULT_ACCESS_TOKEN_ENV,
     DEFAULT_AXIOM_SUPABASE_URL,
     DEFAULT_SERVICE_KEY_ENV,
     delete_supabase_provisions_scope,
+    fetch_provision_counts,
     load_provisions_to_supabase,
     resolve_service_key,
     write_supabase_rows_jsonl,
@@ -211,6 +214,22 @@ def _cmd_load_supabase(args: argparse.Namespace) -> int:
         payload["replace_scope"] = replace_report.to_mapping()
     payload["provisions"] = str(args.provisions)
     payload["supabase_url"] = args.supabase_url
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_snapshot_provision_counts(args: argparse.Namespace) -> int:
+    service_key = resolve_service_key(
+        args.supabase_url,
+        service_key_env=args.service_key_env,
+        access_token_env=args.access_token_env,
+    )
+    rows = fetch_provision_counts(service_key=service_key, supabase_url=args.supabase_url)
+    payload: dict[str, object] = {"rows": list(rows)}
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        payload["written_to"] = str(args.output)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
@@ -635,6 +654,64 @@ def _cmd_extract_nebraska_revised_statutes(args: argparse.Namespace) -> int:
     return 0 if report.coverage.complete or args.allow_incomplete else 2
 
 
+def _cmd_extract_washington_rcw(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_washington_rcw(
+        store,
+        version=args.version,
+        source_dir=args.source_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        limit=args.limit,
+        workers=args.workers,
+        download_dir=args.download_dir,
+    )
+    print(
+        json.dumps(
+            _state_statute_report_payload(
+                report,
+                source_id="us-wa-rcw",
+                adapter="washington-rcw",
+                version=args.version,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_extract_illinois_ilcs(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_illinois_ilcs(
+        store,
+        version=args.version,
+        source_dir=args.source_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_chapter=args.only_chapter,
+        only_act=args.only_act,
+        limit=args.limit,
+        workers=args.workers,
+    )
+    print(
+        json.dumps(
+            _state_statute_report_payload(
+                report,
+                source_id="us-il-ilcs",
+                adapter="illinois-ilcs",
+                version=args.version,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
 def _cmd_extract_california_codes_bulk(args: argparse.Namespace) -> int:
     store = CorpusArtifactStore(args.base)
     expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
@@ -878,6 +955,29 @@ def _extract_state_statute_source(
             workers=_optional_int(options.get("workers")) or 4,
             download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
         )
+    if adapter == "washington-rcw":
+        return extract_washington_rcw(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 4,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+        )
+    if adapter == "illinois-ilcs":
+        return extract_illinois_ilcs(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_chapter=only_title,
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 8,
+        )
     if adapter == "california-codes-bulk":
         return extract_california_codes_bulk(
             store,
@@ -990,6 +1090,14 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "nebraska-revised-statutes": "nebraska-revised-statutes",
         "neb-rev-stat": "nebraska-revised-statutes",
         "ne": "nebraska-revised-statutes",
+        "washington": "washington-rcw",
+        "washington-rcw": "washington-rcw",
+        "rcw": "washington-rcw",
+        "wa": "washington-rcw",
+        "il": "illinois-ilcs",
+        "ilcs": "illinois-ilcs",
+        "illinois": "illinois-ilcs",
+        "illinois-ilcs": "illinois-ilcs",
         "ca": "california-codes-bulk",
         "california": "california-codes-bulk",
         "california-codes": "california-codes-bulk",
@@ -1031,6 +1139,8 @@ def _state_statute_source_path_for_plan(
         "nebraska-revised-statutes",
         "ohio-revised-code",
         "texas-tcas",
+        "washington-rcw",
+        "illinois-ilcs",
     }:
         return _optional_manifest_path(manifest_path, options, "source_dir")
     if adapter == "california-codes-bulk":
@@ -1562,6 +1672,38 @@ def build_parser() -> argparse.ArgumentParser:
     extract_nebraska_statutes_cmd.add_argument("--allow-incomplete", action="store_true")
     extract_nebraska_statutes_cmd.set_defaults(func=_cmd_extract_nebraska_revised_statutes)
 
+    extract_washington_rcw_cmd = sub.add_parser(
+        "extract-washington-rcw",
+        help="Snapshot official Revised Code of Washington HTML.",
+    )
+    extract_washington_rcw_cmd.add_argument("--base", type=Path, required=True)
+    extract_washington_rcw_cmd.add_argument("--version", required=True)
+    extract_washington_rcw_cmd.add_argument("--source-dir", type=Path)
+    extract_washington_rcw_cmd.add_argument("--download-dir", type=Path)
+    extract_washington_rcw_cmd.add_argument("--only-title")
+    extract_washington_rcw_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_washington_rcw_cmd.add_argument("--expression-date")
+    extract_washington_rcw_cmd.add_argument("--limit", type=int)
+    extract_washington_rcw_cmd.add_argument("--workers", type=int, default=4)
+    extract_washington_rcw_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_washington_rcw_cmd.set_defaults(func=_cmd_extract_washington_rcw)
+
+    extract_illinois_ilcs_cmd = sub.add_parser(
+        "extract-illinois-ilcs",
+        help="Snapshot official Illinois ILCS FTP HTML.",
+    )
+    extract_illinois_ilcs_cmd.add_argument("--base", type=Path, required=True)
+    extract_illinois_ilcs_cmd.add_argument("--version", required=True)
+    extract_illinois_ilcs_cmd.add_argument("--source-dir", type=Path)
+    extract_illinois_ilcs_cmd.add_argument("--only-chapter")
+    extract_illinois_ilcs_cmd.add_argument("--only-act")
+    extract_illinois_ilcs_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_illinois_ilcs_cmd.add_argument("--expression-date")
+    extract_illinois_ilcs_cmd.add_argument("--limit", type=int)
+    extract_illinois_ilcs_cmd.add_argument("--workers", type=int, default=8)
+    extract_illinois_ilcs_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_illinois_ilcs_cmd.set_defaults(func=_cmd_extract_illinois_ilcs)
+
     extract_california_codes_cmd = sub.add_parser(
         "extract-california-codes",
         help="Snapshot official California Legislative Counsel bulk code data.",
@@ -1697,6 +1839,20 @@ def build_parser() -> argparse.ArgumentParser:
     load_supabase.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
     load_supabase.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
     load_supabase.set_defaults(func=_cmd_load_supabase)
+
+    snapshot_counts = sub.add_parser(
+        "snapshot-provision-counts",
+        aliases=["snapshot-supabase-counts"],
+        help="Snapshot corpus.provision_counts from Supabase.",
+    )
+    snapshot_counts.add_argument(
+        "--supabase-url",
+        default=os.environ.get("AXIOM_SUPABASE_URL", DEFAULT_AXIOM_SUPABASE_URL),
+    )
+    snapshot_counts.add_argument("--output", type=Path)
+    snapshot_counts.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
+    snapshot_counts.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
+    snapshot_counts.set_defaults(func=_cmd_snapshot_provision_counts)
 
     analytics = sub.add_parser(
         "analytics",

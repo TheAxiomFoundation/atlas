@@ -59,6 +59,11 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-il",
+      "version": "2026-05-04"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-ky",
       "version": "2026-04-29"
     },
@@ -106,6 +111,11 @@
       "document_class": "statute",
       "jurisdiction": "us-vt",
       "version": "2026-04-29"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-wa",
+      "version": "2026-05-04"
     },
     {
       "document_class": "statute",

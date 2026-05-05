@@ -221,7 +221,8 @@ Use `--only-jurisdiction`, `--only-source-id`, and `--limit-per-source` for
 smoke runs or targeted rebuilds. Supported state statute adapters are
 `dc-code`, `cic-html`, `cic-odt`, `colorado-docx`, `texas-tcas`,
 `ohio-revised-code`, `minnesota-statutes`,
-`nebraska-revised-statutes`, `california-codes-bulk`, and `local-state-html`.
+`nebraska-revised-statutes`, `washington-rcw`,
+`california-codes-bulk`, and `local-state-html`.
 
 The `nebraska-revised-statutes` adapter snapshots the official Nebraska
 Legislature statute index, chapter TOCs, and per-section HTML pages. Its
@@ -243,6 +244,11 @@ current release, local source-first artifacts, optional R2 objects, Supabase
 count snapshots, and the latest `validate-release` output. It distinguishes
 productionized states from local-but-unpromoted, Supabase-only legacy, partial,
 and missing source-first extractions.
+
+Use `docs/agent-ingestion-runbook.md` and
+`manifests/state-statute-agent-queue.yaml` when assigning parallel agent work.
+The queue separates validated states, release-repair states, and states that
+are ready for one-agent-per-jurisdiction source-first adapter work.
 
 ```bash
 axiom-corpus-ingest state-statute-completion \
@@ -321,6 +327,9 @@ validate row counts and projection without credentials or network writes.
 Production count analytics are document-class aware:
 
 ```bash
+SUPABASE_ACCESS_TOKEN=... axiom-corpus-ingest snapshot-provision-counts \
+  --output data/corpus/snapshots/provision-counts-2026-04-29.json
+
 axiom-corpus-ingest analytics \
   --base data/corpus \
   --version 2026-04-29 \

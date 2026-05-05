@@ -4,6 +4,7 @@ from axiom_corpus.corpus.models import ProvisionRecord
 from axiom_corpus.corpus.supabase import (
     delete_supabase_provisions_scope,
     deterministic_provision_id,
+    fetch_provision_counts,
     load_provisions_to_supabase,
     provision_to_supabase_row,
     refresh_corpus_analytics,
@@ -50,6 +51,60 @@ def test_write_supabase_rows_jsonl_uses_projection_contract(tmp_path):
     assert count == 1
     assert row["id"] == deterministic_provision_id("us/regulation/7/273")
     assert row["body"] is None
+
+
+def test_fetch_provision_counts_reads_materialized_view(monkeypatch):
+    import axiom_corpus.corpus.supabase as supabase
+
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return json.dumps(
+                [
+                    {
+                        "jurisdiction": "us-wa",
+                        "document_class": "statute",
+                        "provision_count": 54631,
+                        "body_count": 51768,
+                        "top_level_count": 100,
+                        "rulespec_count": 0,
+                        "refreshed_at": "2026-05-04T17:00:00+00:00",
+                    }
+                ]
+            ).encode()
+
+    def fake_urlopen(req, timeout):
+        calls.append((req.full_url, req.headers, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(supabase.urllib.request, "urlopen", fake_urlopen)
+
+    rows = fetch_provision_counts(
+        service_key="service",
+        supabase_url="https://example.supabase.co",
+    )
+
+    assert rows == (
+        {
+            "jurisdiction": "us-wa",
+            "document_class": "statute",
+            "provision_count": 54631,
+            "body_count": 51768,
+            "top_level_count": 100,
+            "rulespec_count": 0,
+            "refreshed_at": "2026-05-04T17:00:00+00:00",
+        },
+    )
+    assert calls[0][0].startswith("https://example.supabase.co/rest/v1/provision_counts?")
+    assert calls[0][1]["Accept-profile"] == "corpus"
+    assert calls[0][2] == 180
 
 
 def test_load_provisions_to_supabase_upserts_chunks_and_refreshes(monkeypatch):

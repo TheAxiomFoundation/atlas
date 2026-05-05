@@ -383,6 +383,43 @@ def test_load_supabase_cli_replace_scope_dry_run(tmp_path, capsys):
     assert payload["rows_total"] == 1
 
 
+def test_snapshot_provision_counts_cli_writes_supabase_counts(tmp_path, capsys, monkeypatch):
+    import axiom_corpus.corpus.cli as cli
+
+    out = tmp_path / "provision-counts.json"
+    monkeypatch.setattr(
+        cli,
+        "resolve_service_key",
+        lambda *args, **kwargs: "service",
+    )
+    monkeypatch.setattr(
+        cli,
+        "fetch_provision_counts",
+        lambda **kwargs: (
+            {
+                "jurisdiction": "us-wa",
+                "document_class": "statute",
+                "provision_count": 54631,
+            },
+        ),
+    )
+
+    exit_code = main(["snapshot-provision-counts", "--output", str(out)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["written_to"] == str(out)
+    assert json.loads(out.read_text()) == {
+        "rows": [
+            {
+                "document_class": "statute",
+                "jurisdiction": "us-wa",
+                "provision_count": 54631,
+            }
+        ]
+    }
+
+
 def test_extract_state_statutes_batch_cli(tmp_path, capsys, monkeypatch):
     import axiom_corpus.corpus.cli as cli
 
@@ -649,6 +686,39 @@ sources:
     assert exit_code == 0
     assert payload["dry_run"] is True
     assert payload["rows"][0]["adapter"] == "nebraska-revised-statutes"
+    assert payload["rows"][0]["source_path"] is None
+    assert payload["rows"][0]["source_path_exists"] is True
+
+
+def test_extract_state_statutes_batch_dry_run_allows_live_washington_source(tmp_path, capsys):
+    manifest = tmp_path / "state-statutes.yaml"
+    manifest.write_text(
+        """
+version: "2026-05-04"
+sources:
+  - source_id: us-wa-rcw
+    jurisdiction: us-wa
+    document_class: statute
+    adapter: washington-rcw
+    source_url: https://app.leg.wa.gov/RCW/default.aspx
+"""
+    )
+
+    exit_code = main(
+        [
+            "extract-state-statutes",
+            "--base",
+            str(tmp_path / "corpus"),
+            "--manifest",
+            str(manifest),
+            "--dry-run",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["dry_run"] is True
+    assert payload["rows"][0]["adapter"] == "washington-rcw"
     assert payload["rows"][0]["source_path"] is None
     assert payload["rows"][0]["source_path_exists"] is True
 

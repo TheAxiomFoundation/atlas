@@ -1,0 +1,389 @@
+version: "2026-05-04"
+source_report: data/corpus/analytics/state-statute-completion-current.json
+document_class: statute
+policy:
+  canonical_pipeline: source-first
+  durable_artifacts:
+    - sources
+    - inventory
+    - provisions
+    - coverage
+  forbidden_sources:
+    - secondary summaries
+    - Justia
+    - FindLaw
+    - LegiScan
+    - State Options Reports
+  publication_requires_controller: true
+status_counts:
+  done: 3
+  blocked_release_repair: 14
+  agent_ready: 34
+recommended_first_batch:
+  - us-in
+  - us-mt
+  - us-nv
+  - us-or
+  - us-ar
+states:
+  - jurisdiction: us-ne
+    name: Nebraska
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-04"
+    provision_count: 55337
+    notes: Source-first adapter is published and validated.
+  - jurisdiction: us-wa
+    name: Washington
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-04"
+    provision_count: 54631
+    notes: Source-first RCW adapter is published and validated.
+  - jurisdiction: us-il
+    name: Illinois
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-04"
+    provision_count: 75104
+    notes: Source-first ILCS adapter is published and validated.
+
+  - jurisdiction: us-ca
+    name: California
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-05-01"
+    supabase_count: 185590
+    notes: Release scope exists and R2 appears complete; repair local artifact or validation state before assigning adapter work.
+  - jurisdiction: us-co
+    name: Colorado
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 39920
+    notes: Release scope exists and R2 appears complete; repair local artifact or validation state before assigning adapter work.
+  - jurisdiction: us-dc
+    name: District of Columbia
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 24346
+    notes: Release scope exists and R2 appears complete; repair local artifact or validation state before assigning adapter work.
+  - jurisdiction: us-ga
+    name: Georgia
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 32457
+    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+  - jurisdiction: us-ky
+    name: Kentucky
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 40088
+    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+  - jurisdiction: us-mn
+    name: Minnesota
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-05-01"
+    supabase_count: 53438
+    notes: Official adapter exists; repair local artifact or validation state first.
+  - jurisdiction: us-nc
+    name: North Carolina
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 37002
+    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+  - jurisdiction: us-nd
+    name: North Dakota
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 33780
+    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+  - jurisdiction: us-oh
+    name: Ohio
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-05-01"
+    supabase_count: 34678
+    notes: Official adapter exists; repair local artifact or validation state first.
+  - jurisdiction: us-tn
+    name: Tennessee
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 36186
+    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+  - jurisdiction: us-tx
+    name: Texas
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-05-01"
+    supabase_count: 145709
+    notes: Official adapter exists; repair local artifact or validation state first.
+  - jurisdiction: us-vt
+    name: Vermont
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 5836
+    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+  - jurisdiction: us-va
+    name: Virginia
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 36402
+    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+  - jurisdiction: us-wy
+    name: Wyoming
+    queue_status: blocked_release_repair
+    production_status: production_blocked_or_incomplete
+    release_version: "2026-04-29"
+    supabase_count: 20262
+    notes: Existing release uses a CIC source; prefer a primary official source if rebuilding.
+
+  - jurisdiction: us-in
+    name: Indiana
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 74749
+    priority: 1
+    notes: Large legacy corpus; discover current official primary source and build source-first adapter.
+  - jurisdiction: us-mt
+    name: Montana
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 44101
+    priority: 1
+    notes: Large legacy corpus; discover current official primary source and build source-first adapter.
+  - jurisdiction: us-nv
+    name: Nevada
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 48637
+    priority: 1
+    notes: Large legacy corpus; discover current official primary source and build source-first adapter.
+  - jurisdiction: us-or
+    name: Oregon
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 39272
+    priority: 1
+    notes: Large legacy corpus; discover current official primary source and build source-first adapter.
+
+  - jurisdiction: us-ar
+    name: Arkansas
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 34668
+    priority: 2
+    notes: Discover current official primary source and build source-first adapter.
+  - jurisdiction: us-de
+    name: Delaware
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 17179
+    priority: 2
+    notes: Discover current official primary source and build source-first adapter.
+  - jurisdiction: us-ms
+    name: Mississippi
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 25480
+    priority: 2
+    notes: Discover current official primary source and build source-first adapter.
+  - jurisdiction: us-nm
+    name: New Mexico
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 13181
+    priority: 2
+    notes: Discover current official primary source and build source-first adapter.
+  - jurisdiction: us-ny
+    name: New York
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 26638
+    priority: 2
+    notes: Discover current official primary source and build source-first adapter.
+  - jurisdiction: us-pa
+    name: Pennsylvania
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 13355
+    priority: 2
+    notes: Discover current official primary source and build source-first adapter.
+  - jurisdiction: us-ri
+    name: Rhode Island
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 30601
+    priority: 2
+    notes: Discover current official primary source and build source-first adapter.
+  - jurisdiction: us-sc
+    name: South Carolina
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 30822
+    priority: 2
+    notes: Discover current official primary source and build source-first adapter.
+  - jurisdiction: us-wv
+    name: West Virginia
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 4474
+    priority: 2
+    notes: Discover current official primary source and build source-first adapter.
+
+  - jurisdiction: us-al
+    name: Alabama
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 110
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-ak
+    name: Alaska
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 304
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-az
+    name: Arizona
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 812
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-ct
+    name: Connecticut
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 1784
+    priority: 3
+    notes: Legacy count may be partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-fl
+    name: Florida
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 741
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-hi
+    name: Hawaii
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 1467
+    priority: 3
+    notes: Legacy count may be partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-id
+    name: Idaho
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 59
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-ia
+    name: Iowa
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 9787
+    priority: 3
+    notes: Discover current official primary source and build source-first adapter.
+  - jurisdiction: us-ks
+    name: Kansas
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 423
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-la
+    name: Louisiana
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 501
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-me
+    name: Maine
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 48
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-md
+    name: Maryland
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 2017
+    priority: 3
+    notes: Legacy count may be partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-ma
+    name: Massachusetts
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 29
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-mi
+    name: Michigan
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 1
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-mo
+    name: Missouri
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 702
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-nh
+    name: New Hampshire
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 584
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-nj
+    name: New Jersey
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 5
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-ok
+    name: Oklahoma
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 47
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-sd
+    name: South Dakota
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 2
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-ut
+    name: Utah
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 822
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+  - jurisdiction: us-wi
+    name: Wisconsin
+    queue_status: agent_ready
+    production_status: supabase_only_legacy
+    supabase_count: 726
+    priority: 3
+    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.

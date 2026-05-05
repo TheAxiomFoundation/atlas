@@ -131,6 +131,68 @@ def write_supabase_rows_jsonl(path: str | Path, records: Iterable[ProvisionRecor
     return len(rows)
 
 
+def fetch_provision_counts(
+    *,
+    service_key: str,
+    supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
+) -> tuple[dict[str, object], ...]:
+    """Fetch the production `corpus.provision_counts` materialized-view rows."""
+    query = urllib.parse.urlencode(
+        {
+            "select": (
+                "jurisdiction,document_class,provision_count,body_count,"
+                "top_level_count,rulespec_count,refreshed_at"
+            ),
+            "order": "jurisdiction.asc,document_class.asc",
+        }
+    )
+    req = urllib.request.Request(
+        f"{_rest_url(supabase_url)}/provision_counts?{query}",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Accept": "application/json",
+            "Accept-Profile": "corpus",
+            "User-Agent": USER_AGENT,
+        },
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        rows = json.loads(resp.read())
+    if not isinstance(rows, list):
+        raise RuntimeError("unexpected Supabase provision-count response")
+    return tuple(_normalize_count_row(row) for row in rows if isinstance(row, dict))
+
+
+def _normalize_count_row(row: Mapping[str, object]) -> dict[str, object]:
+    jurisdiction = row.get("jurisdiction")
+    document_class = row.get("document_class")
+    provision_count = row.get("provision_count")
+    if jurisdiction is None or document_class is None or provision_count is None:
+        raise RuntimeError("Supabase provision-count row is missing required fields")
+    normalized: dict[str, object] = {
+        "jurisdiction": str(jurisdiction),
+        "document_class": str(document_class),
+        "provision_count": _count_value(provision_count),
+    }
+    for key in ("body_count", "top_level_count", "rulespec_count"):
+        value = row.get(key)
+        if value is not None:
+            normalized[key] = _count_value(value)
+    if row.get("refreshed_at") is not None:
+        normalized["refreshed_at"] = str(row["refreshed_at"])
+    return normalized
+
+
+def _count_value(value: object) -> int:
+    if isinstance(value, bool):
+        raise RuntimeError("Supabase count value must be numeric")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value)
+    raise RuntimeError("Supabase count value must be numeric")
+
+
 def resolve_service_key(
     supabase_url: str,
     *,

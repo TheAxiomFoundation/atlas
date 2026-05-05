@@ -21,6 +21,9 @@ from axiom_corpus.corpus.states import (
     _parse_nebraska_chapter_sections,
     _parse_nebraska_chapters,
     _parse_state_html_sections,
+    _parse_washington_chapter_sections,
+    _parse_washington_chapters,
+    _parse_washington_titles,
     _split_state_html_last_hyphen,
     _split_state_html_prefixed_section,
     _split_state_html_triplet,
@@ -42,6 +45,7 @@ from axiom_corpus.corpus.states import (
     extract_ohio_revised_code,
     extract_state_html_directory,
     extract_texas_tcas,
+    extract_washington_rcw,
     state_run_id,
 )
 from axiom_corpus.models import Citation as LegacyCitation
@@ -344,6 +348,72 @@ SAMPLE_NEBRASKA_CHAPTER = """<!DOCTYPE html>
 """
 
 
+SAMPLE_WASHINGTON_INDEX = """<!DOCTYPE html>
+<html>
+<body>
+  <div id="contentWrapper">
+    <table>
+      <tr>
+        <td><a href="default.aspx?Cite=42">Title 42</a></td>
+        <td>PUBLIC OFFICERS AND AGENCIES</td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>
+"""
+
+
+SAMPLE_WASHINGTON_TITLE = """<!DOCTYPE html>
+<html>
+<body>
+  <h1>Title 42 RCW</h1>
+  <h2>PUBLIC OFFICERS AND AGENCIES</h2>
+  <div id="contentWrapper" class="title-page">
+    <h3 class="list-heading">Chapters</h3>
+    <table>
+      <tr>
+        <td><a href="http://app.leg.wa.gov/RCW/default.aspx?cite=42.56">42.56</a></td>
+        <td>Public records act.</td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>
+"""
+
+
+SAMPLE_WASHINGTON_CHAPTER = """<!DOCTYPE html>
+<html>
+<body>
+  <h1>Chapter 42.56 RCW</h1>
+  <h2>PUBLIC RECORDS ACT</h2>
+  <div id="ContentPlaceHolder1_pnlExpanded">
+    <span>
+      <a name="42.56.010"></a>
+      <div><h3><a href="default.aspx?cite=42.56.010&amp;pdf=true">PDF</a>RCW <a href="default.aspx?cite=42.56.010">42.56.010</a></h3></div>
+      <div><h3>Definitions.</h3></div>
+      <div>
+        <div style="text-indent:0.5in;">The definitions in this section apply throughout this chapter.</div>
+        <div style="text-indent:0.5in;">See RCW <a href="default.aspx?cite=42.56.020">42.56.020</a>.</div>
+      </div>
+      <div style="margin-top:15pt;margin-bottom:0pt;">[ 2022 c 71 s 6 .]</div>
+      <div style="margin-top:0.25in;margin-bottom:0.25in;"><h3>Notes:</h3></div>
+      <div style="margin-bottom:0.2in;"><div>Findings: See note following RCW <a href="default.aspx?cite=28B.10.930">28B.10.930</a>.</div></div>
+    </span>
+    <span>
+      <a name="42.56.020"></a>
+      <div><h3>RCW <a href="default.aspx?cite=42.56.020">42.56.020</a></h3></div>
+      <div><h3>Short title.</h3></div>
+      <div><div>This chapter may be known and cited as the public records act.</div></div>
+      <div style="margin-top:15pt;margin-bottom:0pt;">[ 2005 c 274 s 102 .]</div>
+    </span>
+  </div>
+</body>
+</html>
+"""
+
+
 SAMPLE_CALIFORNIA_SECTION_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <section>
   <heading>17052. Personal exemption credit</heading>
@@ -445,6 +515,16 @@ def _write_nebraska_fixture(source_dir):
         SAMPLE_NEBRASKA_INDEX
     )
     (chapter_dir / "chapter-1-full.html").write_text(SAMPLE_NEBRASKA_CHAPTER)
+
+
+def _write_washington_fixture(source_dir):
+    title_dir = source_dir / "washington-rcw-html" / "titles"
+    chapter_dir = source_dir / "washington-rcw-html" / "chapters"
+    title_dir.mkdir(parents=True)
+    chapter_dir.mkdir()
+    (source_dir / "washington-rcw-html" / "index.html").write_text(SAMPLE_WASHINGTON_INDEX)
+    (title_dir / "title-42.html").write_text(SAMPLE_WASHINGTON_TITLE)
+    (chapter_dir / "chapter-42.56-full.html").write_text(SAMPLE_WASHINGTON_CHAPTER)
 
 
 def _write_california_bulk_fixture(path):
@@ -824,6 +904,49 @@ def test_extract_nebraska_revised_statutes_writes_state_records(tmp_path):
     )
 
 
+def test_extract_washington_rcw_writes_state_records(tmp_path):
+    source_dir = tmp_path / "washington"
+    _write_washington_fixture(source_dir)
+    store = CorpusArtifactStore(tmp_path / "corpus")
+
+    report = extract_washington_rcw(
+        store,
+        version="2026-05-04",
+        source_dir=source_dir,
+        source_as_of="2026-05-04",
+        only_title="42",
+    )
+
+    assert report.coverage.complete
+    assert report.title_count == 1
+    assert report.container_count == 2
+    assert report.section_count == 2
+    records = load_provisions(report.provisions_path)
+    assert [record.citation_path for record in records] == [
+        "us-wa/statute/42",
+        "us-wa/statute/42/42.56",
+        "us-wa/statute/42/42.56/42.56.010",
+        "us-wa/statute/42/42.56/42.56.020",
+    ]
+    assert records[0].heading == "PUBLIC OFFICERS AND AGENCIES"
+    assert records[1].heading == "PUBLIC RECORDS ACT"
+    assert records[2].heading == "Definitions"
+    assert records[2].metadata["references_to"] == [
+        "us-wa/statute/28B/28B.10/28B.10.930",
+        "us-wa/statute/42/42.56/42.56.020",
+    ]
+    assert records[2].metadata["source_history"] == ["[ 2022 c 71 s 6 .]"]
+    assert records[2].metadata["notes"] == [
+        "Findings: See note following RCW 28B.10.930 ."
+    ]
+    assert "definitions in this section" in (records[2].body or "")
+    inventory = load_source_inventory(report.inventory_path)
+    assert inventory[-1].source_format == "washington-rcw-html"
+    assert inventory[-1].source_path.endswith(
+        "/washington-rcw-html/chapters/chapter-42.56-full.html"
+    )
+
+
 def test_nebraska_helpers_cover_defensive_paths():
     chapters = _parse_nebraska_chapters(
         b"""
@@ -859,6 +982,51 @@ def test_nebraska_helpers_cover_defensive_paths():
     )
     assert _nebraska_href_to_citation_path("/laws/not-statutes.php") is None
     assert _nebraska_section_heading_parts("not a section") is None
+
+
+def test_washington_helpers_cover_defensive_paths():
+    titles = _parse_washington_titles(
+        b"""
+        <a href="default.aspx?Cite=042">Title 42</a>
+        <a href="default.aspx?Cite=bad">Bad</a>
+        <a href="default.aspx?Cite=42">Duplicate</a>
+        """
+    )
+    assert [title.num for title in titles] == ["42"]
+    chapters = _parse_washington_chapters(SAMPLE_WASHINGTON_TITLE.encode(), title=titles[0])
+    assert [chapter.num for chapter in chapters] == ["42.56"]
+    sections = _parse_washington_chapter_sections(
+        SAMPLE_WASHINGTON_CHAPTER.encode(),
+        chapter=chapters[0],
+    )
+    assert [section.section for section in sections] == ["42.56.010", "42.56.020"]
+    assert sections[0].references_to == (
+        "us-wa/statute/28B/28B.10/28B.10.930",
+        "us-wa/statute/42/42.56/42.56.020",
+    )
+    ucc_titles = _parse_washington_titles(b'<a href="default.aspx?cite=62A">Title 62A</a>')
+    ucc_chapters = _parse_washington_chapters(
+        b"""
+        <div id="contentWrapper">
+          <a href="default.aspx?cite=62A.1">62A.1</a>
+        </div>
+        """,
+        title=ucc_titles[0],
+    )
+    ucc_sections = _parse_washington_chapter_sections(
+        b"""
+        <div id="ContentPlaceHolder1_pnlExpanded">
+          <span>
+            <a name="62A.1-101"></a>
+            <div><h3>RCW <a href="default.aspx?cite=62A.1-101">62A.1-101</a></h3></div>
+            <div><h3>Short titles.</h3></div>
+            <div><div>This title may be cited as the Uniform Commercial Code.</div></div>
+          </span>
+        </div>
+        """,
+        chapter=ucc_chapters[0],
+    )
+    assert ucc_sections[0].citation_path == "us-wa/statute/62A/62A.1/62A.1-101"
 
 
 def test_nebraska_extraction_reports_source_errors(tmp_path):
@@ -1253,6 +1421,31 @@ def test_extract_nebraska_revised_statutes_cli_local_source(tmp_path, capsys):
     assert exit_code == 0
     assert '"jurisdiction": "us-ne"' in output
     assert '"provisions_written": 3' in output
+
+
+def test_extract_washington_rcw_cli_local_source(tmp_path, capsys):
+    source_dir = tmp_path / "washington"
+    _write_washington_fixture(source_dir)
+    base = tmp_path / "corpus"
+
+    exit_code = main(
+        [
+            "extract-washington-rcw",
+            "--base",
+            str(base),
+            "--version",
+            "2026-05-04",
+            "--source-dir",
+            str(source_dir),
+            "--only-title",
+            "42",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert '"jurisdiction": "us-wa"' in output
+    assert '"provisions_written": 4' in output
 
 
 def test_extract_california_codes_cli_local_source(tmp_path, capsys):
