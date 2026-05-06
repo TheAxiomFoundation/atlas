@@ -352,6 +352,51 @@ def test_has_rulespec_none_is_treated_as_false():
     assert by_path["root"].encoded_descendant_count == 0
 
 
+def test_encoded_paths_set_has_rulespec_even_when_provision_says_false():
+    nodes = build_navigation_nodes(
+        [
+            _record("us/statute/26"),
+            _record("us/statute/26/3111", parent_citation_path="us/statute/26"),
+            _record("us/statute/26/3111/a", parent_citation_path="us/statute/26/3111"),
+        ],
+        encoded_paths={"us/statute/26/3111/a"},
+    )
+    by_path = {n.path: n for n in nodes}
+
+    assert by_path["us/statute/26/3111/a"].has_rulespec is True
+    assert by_path["us/statute/26/3111"].has_rulespec is False
+    # Direct encoded leaf has no encoded descendants of its own.
+    assert by_path["us/statute/26/3111/a"].encoded_descendant_count == 0
+    # Ancestors light up so encoded-only browsing is reachable from the top.
+    assert by_path["us/statute/26/3111"].encoded_descendant_count == 1
+    assert by_path["us/statute/26"].encoded_descendant_count == 1
+
+
+def test_encoded_paths_for_paths_not_in_dataset_are_silently_ignored():
+    nodes = build_navigation_nodes(
+        [_record("us/statute/26")],
+        encoded_paths={"us/statute/99/9999"},
+    )
+    assert [n.path for n in nodes] == ["us/statute/26"]
+    assert nodes[0].has_rulespec is False
+    assert nodes[0].encoded_descendant_count == 0
+
+
+def test_encoded_paths_or_with_existing_provision_has_rulespec():
+    nodes = build_navigation_nodes(
+        [
+            _record("a"),
+            _record("a/b", parent_citation_path="a", has_rulespec=True),
+            _record("a/c", parent_citation_path="a"),
+        ],
+        encoded_paths={"a/c"},
+    )
+    by_path = {n.path: n for n in nodes}
+    assert by_path["a/b"].has_rulespec is True
+    assert by_path["a/c"].has_rulespec is True
+    assert by_path["a"].encoded_descendant_count == 2
+
+
 def test_repeated_builds_emit_identical_rows():
     records = [
         _record("alpha"),

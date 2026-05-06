@@ -108,6 +108,7 @@ def build_navigation_nodes(
     *,
     jurisdiction: str | None = None,
     document_class: str | None = None,
+    encoded_paths: Iterable[str] | None = None,
 ) -> tuple[NavigationNode, ...]:
     """Project provision records into `corpus.navigation_nodes` rows.
 
@@ -117,6 +118,14 @@ def build_navigation_nodes(
 
     Optional `jurisdiction` / `document_class` filters mirror the scope flags
     on the CLI: callers that want the full corpus pass them as ``None``.
+
+    ``encoded_paths`` augments ``record.has_rulespec`` from an external source
+    (typically the jurisdiction's `rules-*` repo, see
+    ``axiom_corpus.corpus.rulespec_paths``). A node whose path is in the set
+    is treated as encoded even when the corresponding provision row has
+    ``has_rulespec=False``. Ancestor ``encoded_descendant_count`` then
+    propagates from those augmented values, so encoded-only browsing is
+    discoverable from the top of the tree.
     """
     filtered: list[ProvisionRecord] = []
     seen_paths: set[str] = set()
@@ -131,6 +140,8 @@ def build_navigation_nodes(
             continue
         seen_paths.add(record.citation_path)
         filtered.append(record)
+
+    encoded_set: set[str] = set(encoded_paths) if encoded_paths is not None else set()
 
     by_path: dict[str, ProvisionRecord] = {r.citation_path: r for r in filtered}
 
@@ -159,7 +170,7 @@ def build_navigation_nodes(
             depth=depths[path],
             provision_id=record.id or deterministic_provision_id(path),
             citation_path=path,
-            has_rulespec=bool(record.has_rulespec),
+            has_rulespec=bool(record.has_rulespec) or path in encoded_set,
             status=_status_for(record),
         )
 

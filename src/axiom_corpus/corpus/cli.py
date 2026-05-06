@@ -48,6 +48,11 @@ from axiom_corpus.corpus.r2 import (
 )
 from axiom_corpus.corpus.release_quality import validate_release
 from axiom_corpus.corpus.releases import ReleaseManifest, resolve_release_manifest_path
+from axiom_corpus.corpus.rulespec_paths import (
+    JURISDICTION_REPO_MAP,
+    discover_encoded_paths,
+    discover_encoded_paths_for_jurisdictions,
+)
 from axiom_corpus.corpus.state_adapters.delaware import extract_delaware_code
 from axiom_corpus.corpus.state_adapters.illinois import extract_illinois_ilcs
 from axiom_corpus.corpus.state_adapters.indiana import (
@@ -268,12 +273,16 @@ def _cmd_load_supabase(args: argparse.Namespace) -> int:
                         doc_type=document_class,
                     )
                 )
+        encoded_paths = _resolve_encoded_paths(
+            args, {jurisdiction for jurisdiction, _ in _provision_scopes(records)}
+        )
         nodes = build_navigation_nodes(
             _apply_navigation_status_overrides(
                 navigation_records,
                 existing_statuses=existing_navigation_statuses,
                 overrides=records,
-            )
+            ),
+            encoded_paths=encoded_paths,
         )
         navigation_report = write_navigation_nodes_to_supabase(
             nodes,
@@ -362,6 +371,11 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
             )
         sources_used = [f"supabase:{args.supabase_url}"]
 
+    encoded_jurisdictions = (
+        {args.jurisdiction} if args.jurisdiction else {r.jurisdiction for r in records}
+    )
+    encoded_paths = _resolve_encoded_paths(args, encoded_jurisdictions)
+
     nodes: tuple[NavigationNode, ...] = build_navigation_nodes(
         _apply_navigation_status_overrides(
             records,
@@ -370,6 +384,7 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
         ),
         jurisdiction=args.jurisdiction,
         document_class=args.doc_type,
+        encoded_paths=encoded_paths,
     )
 
     payload: dict[str, object] = {
@@ -379,6 +394,8 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
         "doc_type": args.doc_type,
         "sources": sources_used,
         "preserved_status_count": len(existing_navigation_statuses),
+        "encoded_paths_seen": len(encoded_paths),
+        "nodes_with_rulespec": sum(1 for n in nodes if n.has_rulespec),
     }
 
     if args.output:
@@ -426,6 +443,71 @@ def _build_navigation_replace_scope(args: argparse.Namespace) -> bool:
     if args.replace_scope is not None:
         return bool(args.replace_scope)
     return bool(args.from_supabase)
+
+
+def _resolve_encoded_paths(
+    args: argparse.Namespace,
+    jurisdictions: Iterable[str],
+) -> set[str]:
+    """Combine ``--rulespec-repo`` and ``--rulespec-root`` flags into a set of
+    canonical encoded citation paths for the given jurisdictions.
+
+    ``--rulespec-repo`` is a repeatable explicit checkout, paired with the
+    jurisdiction it covers. ``--rulespec-root`` points at a directory holding
+    sibling ``rules-*`` checkouts and discovers each jurisdiction's repo by
+    name. ``--rulespec-auto`` (the default) silently looks for
+    ``../rules-{repo}`` next to this corpus checkout. Empty when no repo is
+    on disk for any input jurisdiction.
+    """
+    encoded: set[str] = set()
+    juris_list = sorted({j for j in jurisdictions if j})
+
+    repos: list[tuple[str, Path]] = []
+    for repo_arg in args.rulespec_repo or []:
+        repo_path = Path(repo_arg)
+        # Infer the jurisdiction from the repo dir name (rules-us-co -> us-co).
+        repo_juris = _jurisdiction_for_repo_dir(repo_path.name)
+        if repo_juris is None:
+            print(
+                f"warning: cannot infer jurisdiction from rulespec repo path {repo_path}",
+                file=sys.stderr,
+            )
+            continue
+        repos.append((repo_juris, repo_path))
+
+    if args.rulespec_root:
+        root_paths = [Path(p) for p in args.rulespec_root]
+        for root in root_paths:
+            for j, paths in discover_encoded_paths_for_jurisdictions(root, juris_list).items():
+                encoded.update(paths)
+                # Mark the repo seen so --rulespec-auto doesn't double-count.
+                repo_dir_name = JURISDICTION_REPO_MAP.get(j)
+                if repo_dir_name is not None:
+                    repos.append((j, root / repo_dir_name))
+
+    if args.rulespec_auto:
+        # Auto-discover sibling rules-* checkouts next to this corpus repo.
+        sibling_root = Path.cwd().parent
+        for j in juris_list:
+            repo_dir_name = JURISDICTION_REPO_MAP.get(j)
+            if repo_dir_name is None:
+                continue
+            sibling = sibling_root / repo_dir_name
+            if any(p.samefile(sibling) for _, p in repos if p.exists()):
+                continue
+            if sibling.is_dir():
+                repos.append((j, sibling))
+
+    for j, repo_path in repos:
+        encoded.update(discover_encoded_paths(repo_path, j))
+    return encoded
+
+
+def _jurisdiction_for_repo_dir(repo_dir_name: str) -> str | None:
+    for jurisdiction, name in JURISDICTION_REPO_MAP.items():
+        if name == repo_dir_name:
+            return jurisdiction
+    return None
 
 
 def _apply_navigation_status_overrides(
@@ -2042,6 +2124,39 @@ def _artifact_scope_filter_supplied(args: argparse.Namespace) -> bool:
     return any((args.version, args.jurisdiction, args.document_class))
 
 
+def _add_rulespec_args(sub_parser: argparse.ArgumentParser) -> None:
+    """Attach the shared --rulespec-* flags so build-navigation-index and
+    load-supabase can both pull encoded paths from local rules-* checkouts."""
+    sub_parser.add_argument(
+        "--rulespec-repo",
+        action="append",
+        default=[],
+        help=(
+            "Path to a local rules-* checkout (e.g. /path/to/rules-us). "
+            "Repeatable. Jurisdiction is inferred from the directory name."
+        ),
+    )
+    sub_parser.add_argument(
+        "--rulespec-root",
+        action="append",
+        default=[],
+        help=(
+            "Path to a directory holding sibling rules-* checkouts. The "
+            "builder discovers each jurisdiction's repo by name (rules-us, "
+            "rules-us-co, …). Repeatable."
+        ),
+    )
+    sub_parser.add_argument(
+        "--rulespec-auto",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Automatically check ../rules-{repo} next to the corpus checkout "
+            "for each input jurisdiction. Disable with --no-rulespec-auto."
+        ),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Source-first corpus pipeline tools.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -2533,6 +2648,7 @@ def build_parser() -> argparse.ArgumentParser:
             "post-load nav rebuild. Disable with --no-preserve-navigation-statuses."
         ),
     )
+    _add_rulespec_args(load_supabase)
     load_supabase.set_defaults(func=_cmd_load_supabase)
 
     build_navigation = sub.add_parser(
@@ -2614,6 +2730,7 @@ def build_parser() -> argparse.ArgumentParser:
             "rebuild. Disable with --no-preserve-statuses to wipe and rederive."
         ),
     )
+    _add_rulespec_args(build_navigation)
     build_navigation.set_defaults(func=_cmd_build_navigation_index)
 
     snapshot_counts = sub.add_parser(
