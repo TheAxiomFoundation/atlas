@@ -6,6 +6,8 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Iterable
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,15 @@ from axiom_corpus.corpus.models import (
     DocumentClass,
     ProvisionRecord,
 )
+from axiom_corpus.corpus.navigation import (
+    NavigationNode,
+    build_navigation_nodes,
+)
+from axiom_corpus.corpus.navigation_supabase import (
+    fetch_navigation_statuses,
+    fetch_provisions_for_navigation,
+    write_navigation_nodes_to_supabase,
+)
 from axiom_corpus.corpus.r2 import (
     DEFAULT_ARTIFACT_PREFIXES,
     DEFAULT_RELEASE_ARTIFACT_PREFIXES,
@@ -37,6 +48,11 @@ from axiom_corpus.corpus.r2 import (
 )
 from axiom_corpus.corpus.release_quality import validate_release
 from axiom_corpus.corpus.releases import ReleaseManifest, resolve_release_manifest_path
+from axiom_corpus.corpus.rulespec_paths import (
+    JURISDICTION_REPO_MAP,
+    discover_encoded_paths,
+    discover_encoded_paths_for_jurisdictions,
+)
 from axiom_corpus.corpus.state_adapters.delaware import extract_delaware_code
 from axiom_corpus.corpus.state_adapters.illinois import extract_illinois_ilcs
 from axiom_corpus.corpus.state_adapters.indiana import (
@@ -235,6 +251,53 @@ def _cmd_load_supabase(args: argparse.Namespace) -> int:
         payload["replace_scope"] = replace_report.to_mapping()
     payload["provisions"] = str(args.provisions)
     payload["supabase_url"] = args.supabase_url
+
+    if args.build_navigation and not args.dry_run and report.rows_loaded:
+        navigation_records: list[ProvisionRecord] = []
+        existing_navigation_statuses: dict[str, str] = {}
+        for jurisdiction, document_class in _provision_scopes(records):
+            navigation_records.extend(
+                fetch_provisions_for_navigation(
+                    service_key=service_key,
+                    supabase_url=args.supabase_url,
+                    jurisdiction=jurisdiction,
+                    doc_type=document_class,
+                )
+            )
+            if args.preserve_navigation_statuses:
+                existing_navigation_statuses.update(
+                    fetch_navigation_statuses(
+                        service_key=service_key,
+                        supabase_url=args.supabase_url,
+                        jurisdiction=jurisdiction,
+                        doc_type=document_class,
+                    )
+                )
+        encoded_paths = _resolve_encoded_paths(
+            args, {jurisdiction for jurisdiction, _ in _provision_scopes(records)}
+        )
+        nodes = build_navigation_nodes(
+            _apply_navigation_status_overrides(
+                navigation_records,
+                existing_statuses=existing_navigation_statuses,
+                overrides=records,
+            ),
+            encoded_paths=encoded_paths,
+        )
+        navigation_report = write_navigation_nodes_to_supabase(
+            nodes,
+            service_key=service_key,
+            supabase_url=args.supabase_url,
+            chunk_size=args.chunk_size,
+            replace_scope=True,
+            replace_scopes=_provision_scopes(records),
+            dry_run=False,
+            progress_stream=sys.stderr,
+        )
+        payload["navigation"] = navigation_report.to_mapping()
+    elif args.build_navigation and args.dry_run:
+        payload["navigation"] = {"skipped": "dry-run"}
+
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
@@ -253,6 +316,253 @@ def _cmd_snapshot_provision_counts(args: argparse.Namespace) -> int:
         payload["written_to"] = str(args.output)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
+
+
+def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
+    if args.all and not args.provisions and not args.from_supabase:
+        raise SystemExit("build-navigation-index --all requires --provisions or --from-supabase")
+    if not args.provisions and not args.from_supabase:
+        raise SystemExit("build-navigation-index requires --provisions, --from-supabase, or --all")
+
+    will_write_supabase = not args.skip_supabase and not args.dry_run
+    service_key = ""
+    if will_write_supabase or args.from_supabase:
+        service_key = resolve_service_key(
+            args.supabase_url,
+            service_key_env=args.service_key_env,
+            access_token_env=args.access_token_env,
+        )
+
+    records: tuple[ProvisionRecord, ...]
+    existing_navigation_statuses: dict[str, str] = {}
+    if args.provisions:
+        loaded: list[ProvisionRecord] = []
+        for path in args.provisions:
+            loaded.extend(load_provisions(path))
+        records = tuple(loaded)
+        sources_used = [str(path) for path in args.provisions]
+        # Preserve manually-set statuses from the live nav table when we are
+        # going to write back, so a rebuild from a partial JSONL does not wipe
+        # them. Fetch is scoped per (jurisdiction, doc_type) to avoid pulling
+        # rows for unrelated scopes.
+        if will_write_supabase and args.preserve_statuses:
+            for jurisdiction, document_class in _provision_scopes(records):
+                existing_navigation_statuses.update(
+                    fetch_navigation_statuses(
+                        service_key=service_key,
+                        supabase_url=args.supabase_url,
+                        jurisdiction=jurisdiction,
+                        doc_type=document_class,
+                    )
+                )
+    else:
+        records = fetch_provisions_for_navigation(
+            service_key=service_key,
+            supabase_url=args.supabase_url,
+            jurisdiction=args.jurisdiction,
+            doc_type=args.doc_type,
+        )
+        if args.preserve_statuses:
+            existing_navigation_statuses = fetch_navigation_statuses(
+                service_key=service_key,
+                supabase_url=args.supabase_url,
+                jurisdiction=args.jurisdiction,
+                doc_type=args.doc_type,
+            )
+        sources_used = [f"supabase:{args.supabase_url}"]
+
+    encoded_jurisdictions = (
+        {args.jurisdiction} if args.jurisdiction else {r.jurisdiction for r in records}
+    )
+    encoded_paths = _resolve_encoded_paths(args, encoded_jurisdictions)
+
+    nodes: tuple[NavigationNode, ...] = build_navigation_nodes(
+        _apply_navigation_status_overrides(
+            records,
+            existing_statuses=existing_navigation_statuses,
+            overrides=records if args.provisions else (),
+        ),
+        jurisdiction=args.jurisdiction,
+        document_class=args.doc_type,
+        encoded_paths=encoded_paths,
+    )
+
+    payload: dict[str, object] = {
+        "nodes_built": len(nodes),
+        "provisions_input": len(records),
+        "jurisdiction": args.jurisdiction,
+        "doc_type": args.doc_type,
+        "sources": sources_used,
+        "preserved_status_count": len(existing_navigation_statuses),
+        "encoded_paths_seen": len(encoded_paths),
+        "nodes_with_rulespec": sum(1 for n in nodes if n.has_rulespec),
+    }
+
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            "\n".join(json.dumps(node.to_supabase_row(), sort_keys=True) for node in nodes)
+            + ("\n" if nodes else "")
+        )
+        payload["written_to"] = str(args.output)
+
+    if args.skip_supabase:
+        payload["skipped_supabase"] = True
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    replace_scope = _build_navigation_replace_scope(args)
+    write_report = write_navigation_nodes_to_supabase(
+        nodes,
+        service_key=service_key,
+        supabase_url=args.supabase_url,
+        chunk_size=args.chunk_size,
+        replace_scope=replace_scope,
+        replace_scopes=_explicit_navigation_replace_scopes(args),
+        dry_run=args.dry_run,
+        progress_stream=sys.stderr,
+    )
+    payload["supabase"] = write_report.to_mapping()
+    payload["supabase_url"] = args.supabase_url
+    payload["replace_scope"] = replace_scope
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _provision_scopes(records: tuple[ProvisionRecord, ...]) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted({(record.jurisdiction, record.document_class) for record in records}))
+
+
+def _explicit_navigation_replace_scopes(args: argparse.Namespace) -> tuple[tuple[str, str], ...]:
+    if args.jurisdiction and args.doc_type:
+        return ((args.jurisdiction, args.doc_type),)
+    return ()
+
+
+def _build_navigation_replace_scope(args: argparse.Namespace) -> bool:
+    if args.replace_scope is not None:
+        return bool(args.replace_scope)
+    return bool(args.from_supabase)
+
+
+def _resolve_encoded_paths(
+    args: argparse.Namespace,
+    jurisdictions: Iterable[str],
+) -> set[str]:
+    """Combine ``--rulespec-repo`` and ``--rulespec-root`` flags into a set of
+    canonical encoded citation paths for the given jurisdictions.
+
+    ``--rulespec-repo`` is a repeatable explicit checkout, paired with the
+    jurisdiction it covers. ``--rulespec-root`` points at a directory holding
+    sibling ``rules-*`` checkouts and discovers each jurisdiction's repo by
+    name. ``--rulespec-auto`` (the default) silently looks for
+    ``../rules-{repo}`` next to this corpus checkout. Empty when no repo is
+    on disk for any input jurisdiction.
+    """
+    encoded: set[str] = set()
+    juris_list = sorted({j for j in jurisdictions if j})
+
+    repos: list[tuple[str, Path]] = []
+    for repo_arg in args.rulespec_repo or []:
+        repo_path = Path(repo_arg)
+        # Infer the jurisdiction from the repo dir name (rules-us-co -> us-co).
+        repo_juris = _jurisdiction_for_repo_dir(repo_path.name)
+        if repo_juris is None:
+            print(
+                f"warning: cannot infer jurisdiction from rulespec repo path {repo_path}",
+                file=sys.stderr,
+            )
+            continue
+        repos.append((repo_juris, repo_path))
+
+    if args.rulespec_root:
+        root_paths = [Path(p) for p in args.rulespec_root]
+        for root in root_paths:
+            for j, paths in discover_encoded_paths_for_jurisdictions(root, juris_list).items():
+                encoded.update(paths)
+                # Mark the repo seen so --rulespec-auto doesn't double-count.
+                repo_dir_name = JURISDICTION_REPO_MAP.get(j)
+                if repo_dir_name is not None:
+                    repos.append((j, root / repo_dir_name))
+
+    if args.rulespec_auto:
+        # Auto-discover sibling rules-* checkouts next to this corpus repo.
+        sibling_root = Path.cwd().parent
+        for j in juris_list:
+            repo_dir_name = JURISDICTION_REPO_MAP.get(j)
+            if repo_dir_name is None:
+                continue
+            sibling = sibling_root / repo_dir_name
+            if any(p.samefile(sibling) for _, p in repos if p.exists()):
+                continue
+            if sibling.is_dir():
+                repos.append((j, sibling))
+
+    for j, repo_path in repos:
+        encoded.update(discover_encoded_paths(repo_path, j))
+    return encoded
+
+
+def _jurisdiction_for_repo_dir(repo_dir_name: str) -> str | None:
+    for jurisdiction, name in JURISDICTION_REPO_MAP.items():
+        if name == repo_dir_name:
+            return jurisdiction
+    return None
+
+
+def _apply_navigation_status_overrides(
+    records: Iterable[ProvisionRecord],
+    *,
+    existing_statuses: dict[str, str] | None = None,
+    overrides: Iterable[ProvisionRecord],
+) -> tuple[ProvisionRecord, ...]:
+    """Inject curated navigation statuses onto a stream of provision records.
+
+    Statuses are editorial metadata that don't live in `corpus.provisions`;
+    extractors typically leave `metadata.status` unset. To keep manually
+    curated statuses across rebuilds we resolve each record's status as:
+
+    * If a record in ``overrides`` has a non-empty ``metadata.status`` it
+      wins. Re-extracted source records can therefore introduce or change a
+      status without colliding with curated state.
+    * Otherwise we fall back to ``existing_statuses`` (typically a snapshot
+      of the live `corpus.navigation_nodes.status` column).
+    * Otherwise the record's own ``metadata.status`` (if any) is left alone.
+
+    A ``None`` override is treated as "no opinion" rather than "clear" so
+    that fresh source data doesn't accidentally wipe curated statuses.
+    """
+    overrides_with_status: dict[str, str] = {}
+    for record in overrides:
+        status = _navigation_status(record)
+        if status is not None:
+            overrides_with_status[record.citation_path] = status
+    resolved: dict[str, str] = dict(existing_statuses or {})
+    resolved.update(overrides_with_status)
+    if not resolved:
+        return tuple(records)
+    updated: list[ProvisionRecord] = []
+    for record in records:
+        target = resolved.get(record.citation_path)
+        if target is None:
+            updated.append(record)
+            continue
+        if _navigation_status(record) == target:
+            updated.append(record)
+            continue
+        metadata = dict(record.metadata or {})
+        metadata["status"] = target
+        updated.append(replace(record, metadata=metadata))
+    return tuple(updated)
+
+
+def _navigation_status(record: ProvisionRecord) -> str | None:
+    if not record.metadata:
+        return None
+    status = record.metadata.get("status")
+    if isinstance(status, str) and status.strip():
+        return status.strip()
+    return None
 
 
 def _single_provision_scope(records: tuple[ProvisionRecord, ...]) -> tuple[str, str]:
@@ -1814,6 +2124,39 @@ def _artifact_scope_filter_supplied(args: argparse.Namespace) -> bool:
     return any((args.version, args.jurisdiction, args.document_class))
 
 
+def _add_rulespec_args(sub_parser: argparse.ArgumentParser) -> None:
+    """Attach the shared --rulespec-* flags so build-navigation-index and
+    load-supabase can both pull encoded paths from local rules-* checkouts."""
+    sub_parser.add_argument(
+        "--rulespec-repo",
+        action="append",
+        default=[],
+        help=(
+            "Path to a local rules-* checkout (e.g. /path/to/rules-us). "
+            "Repeatable. Jurisdiction is inferred from the directory name."
+        ),
+    )
+    sub_parser.add_argument(
+        "--rulespec-root",
+        action="append",
+        default=[],
+        help=(
+            "Path to a directory holding sibling rules-* checkouts. The "
+            "builder discovers each jurisdiction's repo by name (rules-us, "
+            "rules-us-co, …). Repeatable."
+        ),
+    )
+    sub_parser.add_argument(
+        "--rulespec-auto",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Automatically check ../rules-{repo} next to the corpus checkout "
+            "for each input jurisdiction. Disable with --no-rulespec-auto."
+        ),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Source-first corpus pipeline tools.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -2287,7 +2630,108 @@ def build_parser() -> argparse.ArgumentParser:
     )
     load_supabase.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
     load_supabase.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
+    load_supabase.add_argument(
+        "--build-navigation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Rebuild corpus.navigation_nodes for the loaded scope after the "
+            "provisions upsert succeeds. Disabled with --no-build-navigation."
+        ),
+    )
+    load_supabase.add_argument(
+        "--preserve-navigation-statuses",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Carry curated corpus.navigation_nodes.status values across the "
+            "post-load nav rebuild. Disable with --no-preserve-navigation-statuses."
+        ),
+    )
+    _add_rulespec_args(load_supabase)
     load_supabase.set_defaults(func=_cmd_load_supabase)
+
+    build_navigation = sub.add_parser(
+        "build-navigation-index",
+        help=(
+            "Build (and optionally upsert) corpus.navigation_nodes from a "
+            "provisions JSONL or directly from corpus.provisions in Supabase."
+        ),
+    )
+    build_navigation.add_argument(
+        "--provisions",
+        type=Path,
+        action="append",
+        default=[],
+        help="Path to a provisions JSONL file. Repeatable.",
+    )
+    build_navigation.add_argument(
+        "--from-supabase",
+        action="store_true",
+        help="Fetch provisions to navigate from Supabase instead of local JSONL.",
+    )
+    build_navigation.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "Rebuild every (jurisdiction, doc_type) scope. Requires --from-supabase "
+            "or --provisions input."
+        ),
+    )
+    build_navigation.add_argument(
+        "--jurisdiction",
+        help="Filter provisions/scope to one jurisdiction (e.g. us-co).",
+    )
+    build_navigation.add_argument(
+        "--doc-type",
+        choices=[document_class.value for document_class in DocumentClass],
+        help="Filter to one document class (e.g. statute, regulation).",
+    )
+    build_navigation.add_argument(
+        "--output",
+        type=Path,
+        help="Optionally write the built navigation rows to JSONL for inspection.",
+    )
+    build_navigation.add_argument(
+        "--replace-scope",
+        dest="replace_scope",
+        action="store_true",
+        default=None,
+        help=(
+            "Prune stale rows for rebuilt scopes. Defaults to on with "
+            "--from-supabase and off with --provisions."
+        ),
+    )
+    build_navigation.add_argument(
+        "--no-replace-scope",
+        dest="replace_scope",
+        action="store_false",
+        help="Skip pruning stale rows for rebuilt scopes.",
+    )
+    build_navigation.add_argument("--chunk-size", type=int, default=500)
+    build_navigation.add_argument("--dry-run", action="store_true")
+    build_navigation.add_argument(
+        "--skip-supabase",
+        action="store_true",
+        help="Build rows locally without contacting Supabase.",
+    )
+    build_navigation.add_argument(
+        "--supabase-url",
+        default=os.environ.get("AXIOM_SUPABASE_URL", DEFAULT_AXIOM_SUPABASE_URL),
+    )
+    build_navigation.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
+    build_navigation.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
+    build_navigation.add_argument(
+        "--preserve-statuses",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Carry curated corpus.navigation_nodes.status values across the "
+            "rebuild. Disable with --no-preserve-statuses to wipe and rederive."
+        ),
+    )
+    _add_rulespec_args(build_navigation)
+    build_navigation.set_defaults(func=_cmd_build_navigation_index)
 
     snapshot_counts = sub.add_parser(
         "snapshot-provision-counts",

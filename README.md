@@ -136,6 +136,32 @@ Axiom uses SQLite + FTS5 for local development. For production deployments:
 - **Cloudflare R2** — Raw files (PDFs, XML)
 - **PostgreSQL** — Parsed content, metadata, full-text search
 
+### Navigation index
+
+The Supabase corpus schema also exposes `corpus.navigation_nodes`, a derived
+parent/child serving index for browsing the corpus tree. `load-supabase`
+rebuilds the index for the loaded scope by default (pass
+`--no-build-navigation` to skip), and `axiom-corpus-ingest
+build-navigation-index` (or `scripts/build_navigation_index.py`) can rebuild
+it on demand from a provisions JSONL or directly from
+`corpus.provisions`. `corpus.provisions` remains the source of truth for
+legal text; navigation rows only exist so app navigation can be served from a
+simple indexed `parent_path` lookup instead of repeated prefix `LIKE` scans.
+
+```bash
+# Rebuild one jurisdiction. --from-supabase prunes stale rows by default,
+# since the Supabase snapshot is the full scope.
+uv run python scripts/build_navigation_index.py --jurisdiction us-co --from-supabase
+
+# Rebuild one (jurisdiction, doc_type) scope.
+uv run python scripts/build_navigation_index.py --jurisdiction us-co --doc-type regulation --from-supabase
+
+# Rebuild from a freshly extracted provisions JSONL. --provisions does NOT
+# prune by default, because a local JSONL is often a partial slice of the
+# corpus. Pass --replace-scope to prune stale rows in the touched scopes.
+uv run python scripts/build_navigation_index.py --provisions data/corpus/provisions/us-co/regulation-2026.jsonl
+```
+
 ## Deployment
 
 ### Local

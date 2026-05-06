@@ -83,3 +83,4 @@ data/texas_cache/
 data/
 .env
 coverage.json
+.claude/
