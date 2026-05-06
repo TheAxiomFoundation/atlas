@@ -153,6 +153,20 @@ sources:
     metadata:
       source_authority: Nevada Legislature
 
+  - source_id: us-ny-openleg-api
+    jurisdiction: us-ny
+    document_class: statute
+    adapter: new-york-openleg-api
+    source_url: https://legislation.nysenate.gov/api/3/laws
+    version: "2026-05-06"
+    options:
+      source_as_of: "2026-05-06"
+      expression_date: "2026-05-06"
+      download_dir: ../data/corpus/downloads/us-ny-openleg/2026-05-06
+      api_key_env: NYSENATE_OPENLEG_API_KEY
+    metadata:
+      source_authority: New York State Senate OpenLegislation
+
   - source_id: us-nc-statutes
     jurisdiction: us-nc
     document_class: statute

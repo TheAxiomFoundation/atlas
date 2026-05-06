@@ -67,6 +67,10 @@ from axiom_corpus.corpus.state_adapters.nevada import (
     NEVADA_NRS_DEFAULT_YEAR,
     extract_nevada_nrs,
 )
+from axiom_corpus.corpus.state_adapters.new_york import (
+    extract_new_york_consolidated_laws,
+    extract_new_york_openleg_api,
+)
 from axiom_corpus.corpus.state_adapters.oregon import (
     OREGON_ORS_DEFAULT_YEAR,
     extract_oregon_ors,
@@ -1178,6 +1182,70 @@ def _cmd_extract_nevada_nrs(args: argparse.Namespace) -> int:
     return 0 if report.coverage.complete or args.allow_incomplete else 2
 
 
+def _cmd_extract_new_york_consolidated_laws(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_new_york_consolidated_laws(
+        store,
+        version=args.version,
+        source_dir=args.source_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        limit=args.limit,
+        workers=args.workers,
+        download_dir=args.download_dir,
+        request_delay_seconds=args.request_delay_seconds,
+        timeout_seconds=args.timeout_seconds,
+        request_attempts=args.request_attempts,
+        progress_stream=sys.stderr,
+    )
+    print(
+        json.dumps(
+            _state_statute_report_payload(
+                report,
+                source_id="us-ny-consolidated-laws",
+                adapter="new-york-consolidated-laws",
+                version=args.version,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if _state_statute_report_success(report) or args.allow_incomplete else 2
+
+
+def _cmd_extract_new_york_openleg_api(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    api_key = os.environ.get(args.api_key_env) if args.api_key_env else None
+    report = extract_new_york_openleg_api(
+        store,
+        version=args.version,
+        api_key=api_key,
+        source_dir=args.source_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        limit=args.limit,
+        download_dir=args.download_dir,
+        api_base_url=args.api_base_url,
+    )
+    print(
+        json.dumps(
+            _state_statute_report_payload(
+                report,
+                source_id="us-ny-openleg-api",
+                adapter="new-york-openleg-api",
+                version=args.version,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if _state_statute_report_success(report) or args.allow_incomplete else 2
+
+
 def _cmd_extract_delaware_code(args: argparse.Namespace) -> int:
     store = CorpusArtifactStore(args.base)
     expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
@@ -1382,12 +1450,14 @@ def _cmd_extract_state_statutes(args: argparse.Namespace) -> int:
         )
 
     coverage_complete = bool(rows) and all(row["coverage_complete"] for row in rows)
+    successful = bool(rows) and all(_state_statute_row_success(row) for row in rows)
     payload = {
         "version": manifest.version,
         "source_count": len(selected),
         "completed_count": len(rows),
         "failed_count": len(failures),
         "coverage_complete": coverage_complete,
+        "successful": successful,
         "provisions_written": sum(int(row["provisions_written"]) for row in rows),
         "rows": rows,
         "failures": failures,
@@ -1395,7 +1465,7 @@ def _cmd_extract_state_statutes(args: argparse.Namespace) -> int:
     print(json.dumps(payload, indent=2, sort_keys=True))
     if failures:
         return 1
-    return 0 if coverage_complete or args.allow_incomplete else 2
+    return 0 if successful or args.allow_incomplete else 2
 
 
 def _extract_state_statute_source(
@@ -1576,6 +1646,36 @@ def _extract_state_statute_source(
             workers=_optional_int(options.get("workers")) or 8,
             download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
         )
+    if adapter == "new-york-consolidated-laws":
+        return extract_new_york_consolidated_laws(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 1,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.35,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 15.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 2,
+        )
+    if adapter == "new-york-openleg-api":
+        api_key_env = _optional_text(options.get("api_key_env")) or "NYSENATE_OPENLEG_API_KEY"
+        return extract_new_york_openleg_api(
+            store,
+            version=version,
+            api_key=os.environ.get(api_key_env),
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            api_base_url=_optional_text(options.get("api_base_url"))
+            or "https://legislation.nysenate.gov",
+        )
     if adapter == "delaware-code":
         return extract_delaware_code(
             store,
@@ -1698,6 +1798,22 @@ def _state_statute_report_payload(
     }
 
 
+def _state_statute_row_success(row: dict[str, Any]) -> bool:
+    return (
+        bool(row["coverage_complete"])
+        and int(row["skipped_source_count"]) == 0
+        and int(row["error_count"]) == 0
+    )
+
+
+def _state_statute_report_success(report: StateStatuteExtractReport) -> bool:
+    return (
+        report.coverage.complete
+        and report.skipped_source_count == 0
+        and len(report.errors) == 0
+    )
+
+
 def _state_source_options(source: CorpusSource) -> dict[str, Any]:
     if source.options is None:
         return {}
@@ -1752,6 +1868,14 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "nevada-nrs": "nevada-nrs",
         "nrs": "nevada-nrs",
         "nevada-nrs-html": "nevada-nrs",
+        "ny": "new-york-openleg-api",
+        "new-york": "new-york-openleg-api",
+        "new-york-openleg-api": "new-york-openleg-api",
+        "ny-openleg": "new-york-openleg-api",
+        "openleg": "new-york-openleg-api",
+        "new-york-consolidated-laws": "new-york-consolidated-laws",
+        "nysenate": "new-york-consolidated-laws",
+        "ny-senate": "new-york-consolidated-laws",
         "de": "delaware-code",
         "delaware": "delaware-code",
         "delaware-code": "delaware-code",
@@ -1812,6 +1936,8 @@ def _state_statute_source_path_for_plan(
         "indiana-code",
         "montana-code",
         "nevada-nrs",
+        "new-york-consolidated-laws",
+        "new-york-openleg-api",
         "delaware-code",
         "oregon-ors",
         "rhode-island-general-laws",
@@ -1852,6 +1978,12 @@ def _optional_int(value: Any) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _cmd_extract_colorado_ccr(args: argparse.Namespace) -> int:
@@ -2500,6 +2632,48 @@ def build_parser() -> argparse.ArgumentParser:
     extract_nevada_nrs_cmd.add_argument("--workers", type=int, default=8)
     extract_nevada_nrs_cmd.add_argument("--allow-incomplete", action="store_true")
     extract_nevada_nrs_cmd.set_defaults(func=_cmd_extract_nevada_nrs)
+
+    extract_new_york_cmd = sub.add_parser(
+        "extract-new-york-consolidated-laws",
+        help="Snapshot official New York Senate OpenLegislation HTML.",
+    )
+    extract_new_york_cmd.add_argument("--base", type=Path, required=True)
+    extract_new_york_cmd.add_argument("--version", required=True)
+    extract_new_york_cmd.add_argument("--source-dir", type=Path)
+    extract_new_york_cmd.add_argument("--download-dir", type=Path)
+    extract_new_york_cmd.add_argument("--only-title")
+    extract_new_york_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_new_york_cmd.add_argument("--expression-date")
+    extract_new_york_cmd.add_argument("--limit", type=int)
+    extract_new_york_cmd.add_argument("--workers", type=int, default=1)
+    extract_new_york_cmd.add_argument("--request-delay-seconds", type=float, default=0.35)
+    extract_new_york_cmd.add_argument("--timeout-seconds", type=float, default=15.0)
+    extract_new_york_cmd.add_argument("--request-attempts", type=int, default=2)
+    extract_new_york_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_new_york_cmd.set_defaults(func=_cmd_extract_new_york_consolidated_laws)
+
+    extract_new_york_api_cmd = sub.add_parser(
+        "extract-new-york-openleg-api",
+        help="Snapshot official New York OpenLegislation law JSON.",
+    )
+    extract_new_york_api_cmd.add_argument("--base", type=Path, required=True)
+    extract_new_york_api_cmd.add_argument("--version", required=True)
+    extract_new_york_api_cmd.add_argument("--source-dir", type=Path)
+    extract_new_york_api_cmd.add_argument("--download-dir", type=Path)
+    extract_new_york_api_cmd.add_argument("--only-title")
+    extract_new_york_api_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_new_york_api_cmd.add_argument("--expression-date")
+    extract_new_york_api_cmd.add_argument("--limit", type=int)
+    extract_new_york_api_cmd.add_argument(
+        "--api-key-env",
+        default="NYSENATE_OPENLEG_API_KEY",
+    )
+    extract_new_york_api_cmd.add_argument(
+        "--api-base-url",
+        default="https://legislation.nysenate.gov",
+    )
+    extract_new_york_api_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_new_york_api_cmd.set_defaults(func=_cmd_extract_new_york_openleg_api)
 
     extract_delaware_code_cmd = sub.add_parser(
         "extract-delaware-code",

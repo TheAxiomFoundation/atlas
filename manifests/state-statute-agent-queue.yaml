@@ -16,12 +16,13 @@ policy:
     - State Options Reports
   publication_requires_controller: true
 status_counts:
-  done: 23
+  done: 24
   blocked_release_repair: 0
-  agent_ready: 28
+  blocked_primary_source: 2
+  agent_ready: 25
 recommended_first_batch:
-  - us-ar
-  - us-ms
+  - us-nm
+  - us-pa
 states:
   - jurisdiction: us-ne
     name: Nebraska
@@ -179,11 +180,11 @@ states:
 
   - jurisdiction: us-ar
     name: Arkansas
-    queue_status: agent_ready
+    queue_status: blocked_primary_source
     production_status: supabase_only_legacy
     supabase_count: 34668
     priority: 2
-    notes: Discover current official primary source and build source-first adapter.
+    notes: Official Arkansas Code public access routes through Lexis; TOC is visible, but section text access triggers CAPTCHA/robot validation. Keep legacy Supabase rows until a primary bulk source, licensed feed, or manual source export is available.
   - jurisdiction: us-de
     name: Delaware
     queue_status: done
@@ -194,11 +195,11 @@ states:
     notes: Source-first Delaware Code adapter is locally validated against the official Delaware Code HTML.
   - jurisdiction: us-ms
     name: Mississippi
-    queue_status: agent_ready
+    queue_status: blocked_primary_source
     production_status: supabase_only_legacy
     supabase_count: 25480
     priority: 2
-    notes: Discover current official primary source and build source-first adapter.
+    notes: Official Mississippi Code public access routes through Lexis; TOC is visible, but section text access triggers CAPTCHA/robot validation. Keep legacy Supabase rows until a primary bulk source, licensed feed, or manual source export is available.
   - jurisdiction: us-nm
     name: New Mexico
     queue_status: agent_ready
@@ -208,11 +209,12 @@ states:
     notes: Discover current official primary source and build source-first adapter.
   - jurisdiction: us-ny
     name: New York
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 26638
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-06"
+    provision_count: 31045
     priority: 2
-    notes: Discover current official primary source and build source-first adapter.
+    notes: Source-first official OpenLegislation API adapter extracted 31,045 records with complete coverage from OpenLegislation JSON.
   - jurisdiction: us-pa
     name: Pennsylvania
     queue_status: agent_ready
