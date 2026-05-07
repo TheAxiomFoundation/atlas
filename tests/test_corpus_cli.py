@@ -934,6 +934,68 @@ def test_snapshot_provision_counts_cli_writes_supabase_counts(tmp_path, capsys, 
     }
 
 
+def test_sync_release_scopes_cli_uses_manifest(tmp_path, capsys, monkeypatch):
+    import axiom_corpus.corpus.cli as cli
+
+    base = tmp_path / "corpus"
+    release_dir = base / "releases"
+    release_dir.mkdir(parents=True)
+    release_path = release_dir / "current.json"
+    release_path.write_text(
+        json.dumps(
+            {
+                "name": "current",
+                "scopes": [
+                    {
+                        "jurisdiction": "us-co",
+                        "document_class": "statute",
+                        "version": "2026-04-30",
+                    }
+                ],
+            }
+        )
+    )
+
+    monkeypatch.setattr(cli, "resolve_service_key", lambda *args, **kwargs: "service")
+
+    def fake_sync(release, **kwargs):
+        assert release.name == "current"
+        assert release.scopes[0].jurisdiction == "us-co"
+        assert kwargs["service_key"] == "service"
+        assert kwargs["dry_run"] is True
+
+        class Report:
+            def to_mapping(self):
+                return {
+                    "release_name": release.name,
+                    "rows_total": len(release.scopes),
+                    "rows_loaded": 0,
+                    "chunk_count": 1,
+                    "dry_run": True,
+                }
+
+        return Report()
+
+    monkeypatch.setattr(cli, "sync_release_scopes_to_supabase", fake_sync)
+
+    exit_code = main(
+        [
+            "sync-release-scopes",
+            "--base",
+            str(base),
+            "--release",
+            "current",
+            "--dry-run",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["release_name"] == "current"
+    assert payload["rows_total"] == 1
+    assert payload["release_path"] == str(release_path)
+
+
 def test_extract_state_statutes_batch_cli(tmp_path, capsys, monkeypatch):
     import axiom_corpus.corpus.cli as cli
 

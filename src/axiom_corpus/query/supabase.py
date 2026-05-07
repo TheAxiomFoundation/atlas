@@ -94,12 +94,14 @@ class SupabaseQuery:
         self,
         url: str | None = None,
         anon_key: str | None = None,
+        include_legacy: bool = False,
     ):
         """Initialize the query client.
 
         Args:
             url: Supabase project URL. Defaults to AXIOM_SUPABASE_URL env var.
             anon_key: Supabase anon key. Defaults to SUPABASE_ANON_KEY env var.
+            include_legacy: Query all rows, including scopes outside the current release.
         """
         self.url = url or os.environ.get("AXIOM_SUPABASE_URL", DEFAULT_AXIOM_SUPABASE_URL)
         self.anon_key = (
@@ -111,6 +113,10 @@ class SupabaseQuery:
         if not self.anon_key:
             raise ValueError("SUPABASE_ANON_KEY env var required")
         self.rest_url = f"{self.url}/rest/v1"
+        self.provisions_table = "provisions" if include_legacy else "current_provisions"
+        self.provision_counts_table = (
+            "provision_counts" if include_legacy else "current_provision_counts"
+        )
         self.headers = {
             "apikey": self.anon_key,
             "Authorization": f"Bearer {self.anon_key}",
@@ -198,7 +204,7 @@ class SupabaseQuery:
             "limit": "1",
         }
 
-        results = self._request("provisions", params)
+        results = self._request(self.provisions_table, params)
         if results and len(results) > 0:
             return self._to_rule(results[0])
 
@@ -234,7 +240,7 @@ class SupabaseQuery:
                 ("order", "citation_path"),
                 ("limit", "1000"),  # Reasonable limit for deep fetch
             ]
-            children_data = self._request("provisions", params) or []
+            children_data = self._request(self.provisions_table, params) or []
             children = [self._to_rule(c) for c in children_data]
         else:
             # Fetch only direct children
@@ -242,7 +248,7 @@ class SupabaseQuery:
                 "parent_id": f"eq.{rule.id}",
                 "order": "ordinal",
             }
-            children_data = self._request("provisions", params) or []
+            children_data = self._request(self.provisions_table, params) or []
             children = [self._to_rule(c) for c in children_data]
 
         return Section(rule=rule, children=children)
@@ -320,7 +326,7 @@ class SupabaseQuery:
         if jurisdiction:
             params["jurisdiction"] = f"eq.{jurisdiction}"
 
-        results = self._request("provisions", params) or []
+        results = self._request(self.provisions_table, params) or []
         return [self._to_rule(r) for r in results]
 
     def get_by_citation(
@@ -348,28 +354,19 @@ class SupabaseQuery:
         Returns:
             Dict with jurisdiction counts
         """
-        stats = {}
-        for jur in ["us", "uk", "canada"]:
-            params = {
-                "jurisdiction": f"eq.{jur}",
-                "select": "id",
-                "limit": "1",
-            }
-            # Use HEAD request with Prefer: count=exact
-            url = f"{self.rest_url}/provisions"
-            headers = {
-                **self.headers,
-                "Prefer": "count=exact",
-                "Accept-Profile": "corpus",  # Query corpus schema
-            }
-            with httpx.Client() as client:
-                response = client.head(url, params=params, headers=headers)
-                content_range = response.headers.get("content-range", "")
-                # Parse "0-0/12345" to get 12345
-                if "/" in content_range:
-                    stats[jur] = int(content_range.split("/")[1])
-                else:
-                    stats[jur] = 0
-
+        rows = self._request(
+            self.provision_counts_table,
+            {
+                "select": "jurisdiction,provision_count",
+                "order": "jurisdiction.asc",
+            },
+        )
+        stats: dict[str, int] = {}
+        for row in rows or []:
+            jurisdiction = row.get("jurisdiction")
+            provision_count = row.get("provision_count")
+            if jurisdiction is None or provision_count is None:
+                continue
+            stats[str(jurisdiction)] = stats.get(str(jurisdiction), 0) + int(provision_count)
         stats["total"] = sum(stats.values())
         return stats

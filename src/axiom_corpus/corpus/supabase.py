@@ -9,11 +9,13 @@ import urllib.parse
 import urllib.request
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
 from uuid import NAMESPACE_URL, uuid5
 
 from axiom_corpus.corpus.models import ProvisionRecord
+from axiom_corpus.corpus.releases import ReleaseManifest, ReleaseScope
 
 DEFAULT_AXIOM_SUPABASE_URL = "https://swocpijqqahhuwtuahwc.supabase.co"
 DEFAULT_SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
@@ -79,6 +81,28 @@ class SupabaseDeleteReport:
         }
 
 
+@dataclass(frozen=True)
+class SupabaseReleaseScopeSyncReport:
+    release_name: str
+    rows_total: int
+    rows_loaded: int
+    chunk_count: int
+    dry_run: bool = False
+    refreshed: bool = False
+    refresh_error: str | None = None
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "release_name": self.release_name,
+            "rows_total": self.rows_total,
+            "rows_loaded": self.rows_loaded,
+            "chunk_count": self.chunk_count,
+            "dry_run": self.dry_run,
+            "refreshed": self.refreshed,
+            "refresh_error": self.refresh_error,
+        }
+
+
 def deterministic_provision_id(citation_path: str) -> str:
     """Return the stable UUID used by existing `corpus.provisions` ingests."""
     return str(uuid5(NAMESPACE_URL, f"axiom:{citation_path}"))
@@ -135,8 +159,15 @@ def fetch_provision_counts(
     *,
     service_key: str,
     supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
+    include_legacy: bool = False,
 ) -> tuple[dict[str, object], ...]:
-    """Fetch the production `corpus.provision_counts` materialized-view rows."""
+    """Fetch production provision-count rows.
+
+    By default this reads the current release boundary. Set
+    ``include_legacy=True`` for a full table snapshot that includes scopes not
+    present in the current release manifest.
+    """
+    table_name = "provision_counts" if include_legacy else "current_provision_counts"
     query = urllib.parse.urlencode(
         {
             "select": (
@@ -147,7 +178,7 @@ def fetch_provision_counts(
         }
     )
     req = urllib.request.Request(
-        f"{_rest_url(supabase_url)}/provision_counts?{query}",
+        f"{_rest_url(supabase_url)}/{table_name}?{query}",
         headers={
             "apikey": service_key,
             "Authorization": f"Bearer {service_key}",
@@ -162,6 +193,80 @@ def fetch_provision_counts(
         raise RuntimeError("unexpected Supabase provision-count response")
     return tuple(_normalize_count_row(row) for row in rows if isinstance(row, dict))
 
+
+def sync_release_scopes_to_supabase(
+    release: ReleaseManifest,
+    *,
+    service_key: str,
+    supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
+    chunk_size: int = 500,
+    refresh: bool = True,
+    dry_run: bool = False,
+    allow_refresh_failure: bool = False,
+) -> SupabaseReleaseScopeSyncReport:
+    """Replace the active Supabase release-scope set for a release manifest."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+
+    rest_url = _rest_url(supabase_url)
+    synced_at = datetime.now(UTC).isoformat()
+    rows = [
+        release_scope_to_supabase_row(
+            scope,
+            release_name=release.name,
+            synced_at=synced_at,
+        )
+        for scope in release.scopes
+    ]
+    chunk_count = 0
+    if rows:
+        chunk_count = (len(rows) + chunk_size - 1) // chunk_size
+
+    if not dry_run:
+        deactivate_release_scope_rows(
+            release_name=release.name,
+            service_key=service_key,
+            rest_url=rest_url,
+        )
+        for chunk in _chunked(iter(rows), chunk_size):
+            upsert_release_scope_rows(chunk, service_key=service_key, rest_url=rest_url)
+
+    refreshed = False
+    refresh_error = None
+    if refresh and not dry_run:
+        try:
+            refresh_corpus_analytics(service_key=service_key, rest_url=rest_url)
+            refreshed = True
+        except (TimeoutError, urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as exc:
+            refresh_error = str(exc)
+            if not allow_refresh_failure:
+                raise RuntimeError(f"corpus analytics refresh failed: {exc}") from exc
+
+    return SupabaseReleaseScopeSyncReport(
+        release_name=release.name,
+        rows_total=len(rows),
+        rows_loaded=0 if dry_run else len(rows),
+        chunk_count=chunk_count,
+        dry_run=dry_run,
+        refreshed=refreshed,
+        refresh_error=refresh_error,
+    )
+
+
+def release_scope_to_supabase_row(
+    scope: ReleaseScope,
+    *,
+    release_name: str,
+    synced_at: str,
+) -> dict[str, object]:
+    return {
+        "release_name": release_name,
+        "jurisdiction": scope.jurisdiction,
+        "document_class": scope.document_class,
+        "version": scope.version,
+        "active": True,
+        "synced_at": synced_at,
+    }
 
 def _normalize_count_row(row: Mapping[str, object]) -> dict[str, object]:
     jurisdiction = row.get("jurisdiction")
@@ -524,6 +629,67 @@ def upsert_supabase_rows(
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")[:500]
         raise RuntimeError(f"upsert failed {exc.code}: {body}") from exc
+
+
+def deactivate_release_scope_rows(
+    *,
+    release_name: str,
+    service_key: str,
+    rest_url: str,
+) -> None:
+    query = urllib.parse.urlencode(
+        {
+            "release_name": f"eq.{release_name}",
+            "active": "eq.true",
+        }
+    )
+    req = urllib.request.Request(
+        f"{rest_url}/release_scopes?{query}",
+        data=json.dumps({"active": False}).encode("utf-8"),
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+            "Content-Profile": "corpus",
+            "User-Agent": USER_AGENT,
+        },
+        method="PATCH",
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        resp.read()
+
+
+def upsert_release_scope_rows(
+    rows: list[dict[str, object]],
+    *,
+    service_key: str,
+    rest_url: str,
+) -> None:
+    if not rows:
+        return
+    req = urllib.request.Request(
+        (
+            f"{rest_url}/release_scopes?"
+            "on_conflict=release_name,jurisdiction,document_class,version"
+        ),
+        data=json.dumps(rows).encode("utf-8"),
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+            "Content-Profile": "corpus",
+            "User-Agent": USER_AGENT,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            resp.read()
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"release-scope upsert failed {exc.code}: {body}") from exc
 
 
 def refresh_corpus_analytics(*, service_key: str, rest_url: str) -> None:

@@ -127,6 +127,17 @@ class TestSupabaseQuery:
         assert query.anon_key == "test-key"
         assert query.rest_url == "https://test.supabase.co/rest/v1"
         assert query.headers["apikey"] == "test-key"
+        assert query.provisions_table == "current_provisions"
+        assert query.provision_counts_table == "current_provision_counts"
+
+    def test_init_can_include_legacy_rows(self):
+        query = SupabaseQuery(
+            url="https://test.supabase.co",
+            anon_key="test-key",
+            include_legacy=True,
+        )
+        assert query.provisions_table == "provisions"
+        assert query.provision_counts_table == "provision_counts"
 
     def test_init_from_env(self):
         with patch.dict(
@@ -160,7 +171,8 @@ class TestSupabaseQuery:
         assert result is not None
         assert result.citation_path == "us/statute/26/32"
         request.assert_called_once()
-        _, params = request.call_args.args
+        table, params = request.call_args.args
+        assert table == "current_provisions"
         assert params["citation_path"] == "eq.us/statute/26/32"
         assert params["jurisdiction"] == "eq.us"
         assert "source_path" not in params
@@ -179,7 +191,8 @@ class TestSupabaseQuery:
 
         assert section is not None
         assert [c.citation_path for c in section.children] == ["us/statute/26/32/a"]
-        _, child_params = request.call_args_list[1].args
+        child_table, child_params = request.call_args_list[1].args
+        assert child_table == "current_provisions"
         assert child_params == [
             ("citation_path", "gte.us/statute/26/32/"),
             ("citation_path", "lt.us/statute/26/320"),
@@ -195,5 +208,24 @@ class TestSupabaseQuery:
         with patch.object(query, "_request", return_value=[]) as request:
             query.search("earned income", jurisdiction="us")
 
-        _, params = request.call_args.args
+        table, params = request.call_args.args
+        assert table == "current_provisions"
         assert params["order"] == "jurisdiction,citation_path"
+
+    def test_get_stats_reads_current_counts_by_default(self):
+        query = SupabaseQuery(url="https://test.supabase.co", anon_key="test-key")
+
+        with patch.object(
+            query,
+            "_request",
+            return_value=[
+                {"jurisdiction": "us", "provision_count": 2},
+                {"jurisdiction": "us-co", "provision_count": "3"},
+            ],
+        ) as request:
+            stats = query.get_stats()
+
+        table, params = request.call_args.args
+        assert table == "current_provision_counts"
+        assert params["select"] == "jurisdiction,provision_count"
+        assert stats == {"us": 2, "us-co": 3, "total": 5}
