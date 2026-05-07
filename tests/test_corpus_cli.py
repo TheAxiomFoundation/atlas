@@ -1038,6 +1038,72 @@ sources:
     assert payload["completed_count"] == 2
     assert payload["provisions_written"] == 3
     assert payload["coverage_complete"] is True
+    assert payload["successful"] is True
+
+
+def test_extract_state_statutes_batch_fails_on_skipped_sources(tmp_path, capsys, monkeypatch):
+    import axiom_corpus.corpus.cli as cli
+
+    base = tmp_path / "corpus"
+    release = tmp_path / "release76.2021.05.21"
+    release.mkdir()
+    manifest = tmp_path / "state-statutes.yaml"
+    manifest.write_text(
+        f"""
+version: "2026-04-29"
+sources:
+  - source_id: us-tn-tca
+    jurisdiction: us-tn
+    document_class: statute
+    adapter: cic-html
+    version: "2026-04-29"
+    options:
+      release_dir: {release.name}
+"""
+    )
+
+    def fake_html(*args, **kwargs):
+        return StateStatuteExtractReport(
+            jurisdiction="us-tn",
+            title_count=1,
+            container_count=0,
+            section_count=1,
+            provisions_written=1,
+            inventory_path=base / "inventory/us-tn/statute/2026-04-29.json",
+            provisions_path=base / "provisions/us-tn/statute/2026-04-29.jsonl",
+            coverage_path=base / "coverage/us-tn/statute/2026-04-29.json",
+            coverage=ProvisionCoverageReport(
+                jurisdiction="us-tn",
+                document_class="statute",
+                version="2026-04-29",
+                source_count=1,
+                provision_count=1,
+                matched_count=1,
+                missing_from_provisions=(),
+                extra_provisions=(),
+            ),
+            source_paths=(base / "sources/us-tn/statute/2026-04-29/title.html",),
+            skipped_source_count=1,
+            errors=("blocked source",),
+        )
+
+    monkeypatch.setattr(cli, "extract_cic_html_release", fake_html)
+
+    exit_code = main(
+        [
+            "extract-state-statutes",
+            "--base",
+            str(base),
+            "--manifest",
+            str(manifest),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["coverage_complete"] is True
+    assert payload["successful"] is False
+    assert payload["rows"][0]["skipped_source_count"] == 1
 
 
 def test_extract_state_statutes_batch_dry_run_reports_missing_sources(tmp_path, capsys):
