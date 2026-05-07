@@ -201,14 +201,14 @@ class CanadaLegislationFetcher:
 
         return stats
 
-    def close(self):
+    def close(self) -> None:
         """Close the HTTP client."""
         if self._client:
             self._client.close()
             self._client = None
 
-    def __enter__(self):
+    def __enter__(self) -> "CanadaLegislationFetcher":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         self.close()
