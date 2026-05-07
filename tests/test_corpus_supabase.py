@@ -1,6 +1,7 @@
 import json
 
 from axiom_corpus.corpus.models import ProvisionRecord
+from axiom_corpus.corpus.releases import ReleaseManifest, ReleaseScope
 from axiom_corpus.corpus.supabase import (
     delete_supabase_provisions_scope,
     deterministic_provision_id,
@@ -9,6 +10,7 @@ from axiom_corpus.corpus.supabase import (
     provision_to_supabase_row,
     refresh_corpus_analytics,
     resolve_service_key,
+    sync_release_scopes_to_supabase,
     write_supabase_rows_jsonl,
 )
 
@@ -102,9 +104,97 @@ def test_fetch_provision_counts_reads_materialized_view(monkeypatch):
             "refreshed_at": "2026-05-04T17:00:00+00:00",
         },
     )
-    assert calls[0][0].startswith("https://example.supabase.co/rest/v1/provision_counts?")
+    assert calls[0][0].startswith("https://example.supabase.co/rest/v1/current_provision_counts?")
     assert calls[0][1]["Accept-profile"] == "corpus"
     assert calls[0][2] == 180
+
+
+def test_fetch_provision_counts_can_include_legacy(monkeypatch):
+    import axiom_corpus.corpus.supabase as supabase
+
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return json.dumps(
+                [
+                    {
+                        "jurisdiction": "us-wa",
+                        "document_class": "statute",
+                        "provision_count": 54631,
+                    }
+                ]
+            ).encode()
+
+    def fake_urlopen(req, timeout):
+        calls.append(req.full_url)
+        return FakeResponse()
+
+    monkeypatch.setattr(supabase.urllib.request, "urlopen", fake_urlopen)
+
+    fetch_provision_counts(
+        service_key="service",
+        supabase_url="https://example.supabase.co",
+        include_legacy=True,
+    )
+
+    assert calls[0].startswith("https://example.supabase.co/rest/v1/provision_counts?")
+
+
+def test_sync_release_scopes_to_supabase_replaces_active_scope_set(monkeypatch):
+    import axiom_corpus.corpus.supabase as supabase
+
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return b"{}"
+
+    def fake_urlopen(req, timeout):
+        calls.append((req.get_method(), req.full_url, req.data, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(supabase.urllib.request, "urlopen", fake_urlopen)
+
+    report = sync_release_scopes_to_supabase(
+        ReleaseManifest(
+            name="current",
+            scopes=(
+                ReleaseScope("us", "statute", "2026-04-30"),
+                ReleaseScope("us-co", "statute", "2026-04-30"),
+            ),
+        ),
+        service_key="service",
+        supabase_url="https://example.supabase.co",
+        chunk_size=1,
+    )
+
+    assert report.rows_total == 2
+    assert report.rows_loaded == 2
+    assert report.chunk_count == 2
+    assert report.refreshed
+    assert [call[0] for call in calls] == ["PATCH", "POST", "POST", "POST"]
+    assert calls[0][1] == (
+        "https://example.supabase.co/rest/v1/release_scopes?"
+        "release_name=eq.current&active=eq.true"
+    )
+    assert calls[-1][1] == "https://example.supabase.co/rest/v1/rpc/refresh_corpus_analytics"
+    first_insert = json.loads(calls[1][2])
+    assert first_insert[0]["release_name"] == "current"
+    assert first_insert[0]["jurisdiction"] == "us"
+    assert first_insert[0]["active"] is True
 
 
 def test_load_provisions_to_supabase_upserts_chunks_and_refreshes(monkeypatch):

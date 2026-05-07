@@ -13,6 +13,12 @@ METADATA_ALIGNMENT_MIGRATION = Path(
 ANALYTICS_GRANT_MIGRATION = Path(
     "supabase/migrations/20260429143000_grant_corpus_analytics_service_role.sql"
 )
+CURRENT_RELEASE_MIGRATION = Path(
+    "supabase/migrations/20260507110000_corpus_current_release_views.sql"
+)
+RELEASE_SCOPES_MULTI_VERSION_MIGRATION = Path(
+    "supabase/migrations/20260507113000_release_scopes_allow_multi_version.sql"
+)
 
 
 def test_corpus_analytics_migration_is_document_class_aware():
@@ -65,3 +71,38 @@ def test_corpus_analytics_views_are_service_readable():
 
     assert "GRANT SELECT ON corpus.provision_counts TO postgres, service_role" in sql
     assert "corpus.jurisdiction_counts" not in sql
+
+
+def test_current_release_migration_defines_release_boundary():
+    sql = CURRENT_RELEASE_MIGRATION.read_text()
+
+    assert "CREATE TABLE IF NOT EXISTS corpus.release_scopes" in sql
+    assert "CREATE OR REPLACE VIEW corpus.current_release_scopes" in sql
+    assert "CREATE OR REPLACE VIEW corpus.current_provisions" in sql
+    assert "CREATE OR REPLACE VIEW corpus.legacy_provisions" in sql
+    assert "CREATE MATERIALIZED VIEW IF NOT EXISTS corpus.current_provision_counts" in sql
+    assert "FROM corpus.current_provisions" in sql
+    assert "GRANT SELECT ON corpus.current_provisions TO anon, authenticated" in sql
+    assert "GRANT SELECT ON corpus.legacy_provisions TO postgres, service_role" in sql
+
+
+def test_current_release_migration_switches_default_rpcs():
+    sql = CURRENT_RELEASE_MIGRATION.read_text()
+
+    assert "CREATE OR REPLACE FUNCTION corpus.get_corpus_stats()" in sql
+    assert "FROM corpus.current_provision_counts" in sql
+    assert "CREATE OR REPLACE FUNCTION corpus.get_all_corpus_stats()" in sql
+    assert "CREATE OR REPLACE FUNCTION corpus.search_provisions" in sql
+    assert "FROM corpus.current_provisions p" in sql
+    assert "CREATE OR REPLACE FUNCTION corpus.search_all_provisions" in sql
+    assert "FROM corpus.provisions p" in sql
+    assert "REFRESH MATERIALIZED VIEW CONCURRENTLY corpus.provision_counts" in sql
+    assert "REFRESH MATERIALIZED VIEW CONCURRENTLY corpus.current_provision_counts" in sql
+
+
+def test_release_scopes_allow_multiple_versions_per_document_class():
+    sql = RELEASE_SCOPES_MULTI_VERSION_MIGRATION.read_text()
+
+    assert "DROP INDEX IF EXISTS corpus.idx_release_scopes_one_active_version" in sql
+    assert "jurisdiction/document" in sql
+    assert "unique active version" in sql

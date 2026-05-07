@@ -104,6 +104,7 @@ from axiom_corpus.corpus.supabase import (
     fetch_provision_counts,
     load_provisions_to_supabase,
     resolve_service_key,
+    sync_release_scopes_to_supabase,
     write_supabase_rows_jsonl,
 )
 from axiom_corpus.corpus.usc import (
@@ -312,12 +313,39 @@ def _cmd_snapshot_provision_counts(args: argparse.Namespace) -> int:
         service_key_env=args.service_key_env,
         access_token_env=args.access_token_env,
     )
-    rows = fetch_provision_counts(service_key=service_key, supabase_url=args.supabase_url)
+    rows = fetch_provision_counts(
+        service_key=service_key,
+        supabase_url=args.supabase_url,
+        include_legacy=args.include_legacy,
+    )
     payload: dict[str, object] = {"rows": list(rows)}
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         payload["written_to"] = str(args.output)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_sync_release_scopes(args: argparse.Namespace) -> int:
+    release_path = resolve_release_manifest_path(args.base, args.release)
+    release = ReleaseManifest.load(release_path)
+    service_key = resolve_service_key(
+        args.supabase_url,
+        service_key_env=args.service_key_env,
+        access_token_env=args.access_token_env,
+    )
+    report = sync_release_scopes_to_supabase(
+        release,
+        service_key=service_key,
+        supabase_url=args.supabase_url,
+        chunk_size=args.chunk_size,
+        refresh=not args.skip_refresh,
+        dry_run=args.dry_run,
+        allow_refresh_failure=args.allow_refresh_failure,
+    )
+    payload = report.to_mapping()
+    payload["release_path"] = str(release_path)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
@@ -2976,16 +3004,47 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot_counts = sub.add_parser(
         "snapshot-provision-counts",
         aliases=["snapshot-supabase-counts"],
-        help="Snapshot corpus.provision_counts from Supabase.",
+        help="Snapshot current-release provision counts from Supabase.",
     )
     snapshot_counts.add_argument(
         "--supabase-url",
         default=os.environ.get("AXIOM_SUPABASE_URL", DEFAULT_AXIOM_SUPABASE_URL),
     )
     snapshot_counts.add_argument("--output", type=Path)
+    snapshot_counts.add_argument(
+        "--include-legacy",
+        action="store_true",
+        help="Read corpus.provision_counts instead of the current-release count view.",
+    )
     snapshot_counts.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
     snapshot_counts.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
     snapshot_counts.set_defaults(func=_cmd_snapshot_provision_counts)
+
+    sync_release_scopes = sub.add_parser(
+        "sync-release-scopes",
+        help="Sync a release manifest's active scopes into Supabase.",
+    )
+    sync_release_scopes.add_argument("--base", type=Path, required=True)
+    sync_release_scopes.add_argument("--release", default="current")
+    sync_release_scopes.add_argument(
+        "--supabase-url",
+        default=os.environ.get("AXIOM_SUPABASE_URL", DEFAULT_AXIOM_SUPABASE_URL),
+    )
+    sync_release_scopes.add_argument("--chunk-size", type=int, default=500)
+    sync_release_scopes.add_argument("--dry-run", action="store_true")
+    sync_release_scopes.add_argument(
+        "--skip-refresh",
+        action="store_true",
+        help="Skip refreshing corpus analytics after syncing release scopes.",
+    )
+    sync_release_scopes.add_argument(
+        "--allow-refresh-failure",
+        action="store_true",
+        help="Return a report even if the post-sync analytics refresh fails.",
+    )
+    sync_release_scopes.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
+    sync_release_scopes.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
+    sync_release_scopes.set_defaults(func=_cmd_sync_release_scopes)
 
     analytics = sub.add_parser(
         "analytics",
