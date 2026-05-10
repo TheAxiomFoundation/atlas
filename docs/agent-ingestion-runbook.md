@@ -130,6 +130,6 @@ uv run --extra dev axiom-corpus-ingest snapshot-provision-counts \
   --output data/corpus/snapshots/provision-counts-<yyyy-mm-dd>.json
 ```
 
-After publication, refresh `artifact-report`, `analytics`, and
-`state-statute-completion`, then sync those analytics artifacts to R2.
-
+After publication, refresh `artifact-report`, `analytics`,
+`state-statute-completion`, and `regulation-completion`, then sync those
+analytics artifacts to R2.

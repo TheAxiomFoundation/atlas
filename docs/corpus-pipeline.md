@@ -245,6 +245,12 @@ count snapshots, and the latest `validate-release` output. It distinguishes
 productionized states from local-but-unpromoted, Supabase-only legacy, partial,
 and missing source-first extractions.
 
+Use `regulation-completion` for the same production completion view across
+federal regulations plus every state and DC. This is intentionally broader than
+the current release: today it identifies the completed federal eCFR and Colorado
+CCR scopes and leaves the remaining state regulation jurisdictions in the
+source-first backlog.
+
 Use `docs/agent-ingestion-runbook.md` and
 `manifests/state-statute-agent-queue.yaml` when assigning parallel agent work.
 The queue separates validated states, release-repair states, and states that
@@ -254,9 +260,16 @@ are ready for one-agent-per-jurisdiction source-first adapter work.
 axiom-corpus-ingest state-statute-completion \
   --base data/corpus \
   --release current \
-  --supabase-counts data/corpus/snapshots/provision-counts-2026-05-02.json \
+  --supabase-counts data/corpus/snapshots/provision-counts-2026-05-10.json \
   --include-r2 \
   --output data/corpus/analytics/state-statute-completion-current.json
+
+axiom-corpus-ingest regulation-completion \
+  --base data/corpus \
+  --release current \
+  --supabase-counts data/corpus/snapshots/provision-counts-2026-05-10.json \
+  --include-r2 \
+  --output data/corpus/analytics/regulation-completion-current.json
 ```
 
 Primary SNAP policy documents that are not codified in CCR can be ingested from
