@@ -79,6 +79,14 @@ export interface NodeSpec {
   repo: Repo;
   summary: string;
   detail: string;
+  // Optional deep-detail fields. Render only when present so trivial
+  // nodes (e.g. external publishers) stay terse and important nodes
+  // (ingest, storage, encoding) carry the depth a reader needs.
+  mechanics?: string;
+  rationale?: string;
+  important?: string[];
+  files?: string[];
+  commands?: string[];
   source?: string;
 }
 
@@ -98,8 +106,20 @@ export const NODES: NodeSpec[] = [
     repo: "external",
     summary: "Federal regulations (CFR) in XML",
     detail:
-      "ecfr.gov publishes the Code of Federal Regulations as XML. Ingested by " +
-      "extract-ecfr.",
+      "ecfr.gov is the National Archives' live electronic Code of Federal Regulations. " +
+      "Publishes the full CFR in bulk XML, refreshed daily as agencies file rule changes.",
+    mechanics:
+      "extract-ecfr fetches title-level XML bundles, then walks them part-by-part to " +
+      "emit one ProvisionRecord per section / paragraph. The XML preserves hierarchy " +
+      "(title → chapter → part → subpart → section), and the adapter keeps that hierarchy " +
+      "intact in citation_path.",
+    important: [
+      "Title 7 (USDA / SNAP regs) is our most-encoded slice today — ~10 of the 24 " +
+        "rules-us encodings live there.",
+      "Federal regulation paths drop the publication suffix: regulations/7-cfr/273/7 " +
+        "in rules-us maps to us/regulation/7/273/7 in the corpus.",
+    ],
+    commands: ["extract-ecfr"],
   },
   {
     id: "usc",
@@ -108,7 +128,20 @@ export const NODES: NodeSpec[] = [
     repo: "external",
     summary: "US Code in USLM XML",
     detail:
-      "uscode.house.gov publishes the US Code as USLM XML. Ingested by extract-usc.",
+      "uscode.house.gov publishes the US Code as USLM (United States Legislative " +
+      "Markup) XML. Title-by-title bulk downloads with stable structure.",
+    mechanics:
+      "extract-usc consumes one USLM XML file at a time, walking <title> → <chapter> → " +
+      "<section> → <subsection> elements. USLM is the gold standard among US legislative " +
+      "formats — every element has a stable identifier and the hierarchy is " +
+      "self-describing.",
+    important: [
+      "Title 26 (Internal Revenue Code) is the most policy-relevant title — most tax " +
+        "RuleSpec encoding pulls from here.",
+      "USLM ids round-trip cleanly into our citation_paths: /us/usc/t26/s32 becomes " +
+        "us/statute/26/32.",
+    ],
+    commands: ["extract-usc", "inventory-usc"],
   },
   {
     id: "state-sources",
@@ -117,8 +150,26 @@ export const NODES: NodeSpec[] = [
     repo: "external",
     summary: "State legislature / agency sites",
     detail:
-      "Per-state HTML, PDF, ZIP downloads. Each state adapter (delaware.py, " +
-      "indiana.py, montana.py, …) knows its own source.",
+      "Each US state publishes its statutes (and sometimes regulations and policy) " +
+      "differently. Texas Legislature publishes ZIPs of HTML; Indiana ships annual " +
+      "code dumps; Colorado serves agency rules through the Secretary of State's CCR " +
+      "portal; some smaller states publish PDFs only.",
+    mechanics:
+      "Per-state adapter modules in src/axiom_corpus/corpus/state_adapters/ each know " +
+      "their state's quirks: download method, HTML structure, hierarchy markers. They " +
+      "all produce ProvisionRecord with the same citation_path shape " +
+      "(us-{state}/{doc_type}/...).",
+    rationale:
+      "Concentrating state-specific knowledge in one module per state keeps the " +
+      "core pipeline format-agnostic. Adding a new state is a new file, not a refactor.",
+    important: [
+      "Most state corpora are SHALLOW: section-level rows with no chapter or title " +
+        "containers. That's a data-quality issue inherited from the upstream publisher, " +
+        "not a navigation bug.",
+      "About 50 states + DC are represented; coverage varies — some are statute-only, " +
+        "some include regulations and policy.",
+    ],
+    files: ["src/axiom_corpus/corpus/state_adapters/"],
   },
   {
     id: "canada-source",
@@ -127,8 +178,24 @@ export const NODES: NodeSpec[] = [
     repo: "external",
     summary: "Canadian federal acts (LIMS XML)",
     detail:
-      "Department of Justice publishes consolidated Acts as LIMS XML. Ingested " +
-      "by extract-canada-acts.",
+      "Canada's Department of Justice publishes consolidated federal Acts as LIMS XML. " +
+      "~956 acts total. Bilingual (English + French) but the XML files are split per " +
+      "language.",
+    mechanics:
+      "extract-canada-acts fetches per-act XML, parses the LIMS structure (Section → " +
+      "Subsection → Paragraph → Subparagraph → Clause), and emits one ProvisionRecord " +
+      "per node. Adapter inserts an act-level container row " +
+      "(canada/statute/{cn}) so each act has a navigable root.",
+    important: [
+      "Until May 2026 the legacy ingest left citation_path=null on every Canada row. " +
+        "Fixed by switching to the source-first adapter pattern and re-extracting in " +
+        "place via load-supabase --replace-scope.",
+      "Currently 161 of ~956 acts ingested. The rest exist as XML upstream but haven't " +
+        "been pulled yet.",
+      "English only for now; French content is in separate XMLs we haven't wired up.",
+    ],
+    files: ["src/axiom_corpus/corpus/canada.py"],
+    commands: ["extract-canada-acts"],
   },
   {
     id: "irs-bulk",
@@ -136,7 +203,15 @@ export const NODES: NodeSpec[] = [
     layer: "upstream",
     repo: "external",
     summary: "Revenue procedures / rulings",
-    detail: "Bulk IRS guidance from irs.gov. Ingested via the IRS bulk fetcher path.",
+    detail:
+      "Internal Revenue Service publishes guidance documents (Revenue Procedures, " +
+      "Revenue Rulings, Notices) as PDFs. Hundreds per year.",
+    mechanics:
+      "Bulk fetcher pulls PDFs, downstream tooling extracts text and section structure.",
+    important: [
+      "Document classification matters: 'guidance' vs 'rulemaking' is meaningful in " +
+        "the corpus and affects how the app renders them.",
+    ],
   },
 
   // ── Ingest ────────────────────────────────────────────────────────
@@ -147,8 +222,26 @@ export const NODES: NodeSpec[] = [
     repo: "axiom-corpus",
     summary: "HTTP download, rate-limited",
     detail:
-      "Thin clients that fetch raw upstream bytes. No parsing, no storage. One " +
-      "module per source family.",
+      "Thin HTTP clients that fetch raw bytes from upstream publishers. One module per " +
+      "source family. Returns bytes only — no parsing, no storage.",
+    mechanics:
+      "Each fetcher exposes a small surface: typically a list_*() method to enumerate " +
+      "available documents and a download_*() method to retrieve one. Rate limits, " +
+      "retries, and authentication concerns live here.",
+    rationale:
+      "Isolating HTTP from parsing lets parsers stay deterministic and trivially " +
+      "testable. A flaky upstream doesn't propagate into parser tests, and a parser " +
+      "bug doesn't poison the fetcher cache.",
+    important: [
+      "The Canada fetcher uses requests (not httpx) for downloads — the httpx client " +
+        "reliably hung in _ssl__SSLSocket_read on darwin when streaming >10 MB acts. " +
+        "Caught in May 2026; fix is a single override on download_act().",
+      "Rate limits are baked in (typically 0.5s between requests). Don't bypass — most " +
+        "upstreams will block you.",
+      "User-Agent strings identify us as 'Axiom/1.0 (legislation archiver; " +
+        "contact@axiom-foundation.org)' — keep that intact.",
+    ],
+    files: ["src/axiom_corpus/fetchers/legislation_canada.py", "src/axiom_corpus/fetchers/irs_bulk.py"],
     source: "src/axiom_corpus/fetchers/",
   },
   {
@@ -158,8 +251,23 @@ export const NODES: NodeSpec[] = [
     repo: "axiom-corpus",
     summary: "Bytes → typed domain models",
     detail:
-      "Format-bound (USLM, LIMS, eCFR XML, state HTML). Produce typed Pydantic " +
-      "models — CanadaSection, IndianaCodeProvision, etc.",
+      "Each parser knows exactly one upstream format. USLM (US Code), LIMS (Canada), " +
+      "eCFR XML, state-specific HTML. Output is typed Pydantic models — CanadaSection, " +
+      "IndianaCodeProvision, never strings or untyped dicts.",
+    mechanics:
+      "Heavy use of lxml for XML, BeautifulSoup for HTML. Each parser returns model " +
+      "instances with strong typing so downstream adapters can refactor without " +
+      "guessing what's in a field.",
+    rationale:
+      "Format complexity lives here so adapters don't have to think about XML namespaces " +
+      "or HTML quirks. When a format upstream changes, only one parser breaks.",
+    important: [
+      "Parsers must be deterministic on the same input bytes. No timestamps, no " +
+        "random IDs. Re-running the parser on the same bytes always yields the same " +
+        "model objects.",
+      "Pydantic v2 throughout for runtime validation — catches malformed upstream data " +
+        "before it reaches the adapter.",
+    ],
     source: "src/axiom_corpus/parsers/",
   },
   {
@@ -169,9 +277,45 @@ export const NODES: NodeSpec[] = [
     repo: "axiom-corpus",
     summary: "Typed models → ProvisionRecord + JSONL",
     detail:
-      "Project parser output into ProvisionRecord (with canonical citation_path). " +
-      "Write sources / inventory / provisions / coverage artifacts via " +
-      "CorpusArtifactStore.",
+      "The heart of the source-first pipeline. One adapter per jurisdiction, each " +
+      "responsible for projecting parser output into the canonical ProvisionRecord " +
+      "shape and writing four parallel artifact trees.",
+    mechanics:
+      "Adapter loops over parser output, builds canonical citation_paths, computes " +
+      "deterministic UUID5 ids, and calls CorpusArtifactStore.write_*() to emit: " +
+      "sources/ (raw upstream bytes), inventory/ (expected citation list), " +
+      "provisions/ (normalized rows as JSONL), coverage/ (inventory ↔ provisions diff). " +
+      "Same key structure mirrors to R2.",
+    rationale:
+      "The 'source-first' contract: JSONL on disk is the boundary between adapters and " +
+      "everything downstream. Adapters can change internals freely; consumers stay " +
+      "stable. Same JSONL produces both R2 mirror and Supabase rows.",
+    important: [
+      "Citation path is the canonical id. Format: {jurisdiction}/{doc_type}/{path_segments}. " +
+        "First segment must equal jurisdiction. Becomes the input to UUID5.",
+      "Deterministic UUID5 means re-runs are upserts in place. Two pipelines processing " +
+        "the same source produce the same ids — no drift.",
+      "Coverage report compares expected citations to actual rows. Adapter exits non-zero " +
+        "if coverage is incomplete unless --allow-incomplete.",
+      "Each adapter is ~300-1500 lines depending on the upstream complexity. They share " +
+        "the CorpusArtifactStore + ProvisionRecord contract, not parsing logic.",
+    ],
+    files: [
+      "src/axiom_corpus/corpus/canada.py",
+      "src/axiom_corpus/corpus/colorado.py",
+      "src/axiom_corpus/corpus/ecfr.py",
+      "src/axiom_corpus/corpus/usc.py",
+      "src/axiom_corpus/corpus/state_adapters/",
+    ],
+    commands: [
+      "extract-ecfr",
+      "extract-usc",
+      "extract-canada-acts",
+      "extract-state-statutes",
+      "extract-indiana-code",
+      "extract-colorado-ccr",
+      "extract-{state}-code",
+    ],
     source: "src/axiom_corpus/corpus/",
   },
   {
@@ -181,10 +325,28 @@ export const NODES: NodeSpec[] = [
     repo: "axiom-corpus",
     summary: "Local JSONL artifact tree",
     detail:
-      "sources/{jur}/{doc}/{run}/  raw upstream bytes\n" +
-      "inventory/{jur}/{doc}/{run}.json   expected citations\n" +
-      "provisions/{jur}/{doc}/{run}.jsonl  normalized rows\n" +
-      "coverage/{jur}/{doc}/{run}.json  inventory ↔ provisions diff",
+      "Filesystem layout that holds the intermediate state of every extract. Four " +
+      "parallel trees under data/corpus/ — sources, inventory, provisions, coverage. " +
+      "Same key shape mirrors to R2.",
+    mechanics:
+      "sources/{jur}/{doc}/{run_id}/   raw upstream bytes (sha256 tracked)\n" +
+      "inventory/{jur}/{doc}/{run_id}.json   expected citation list\n" +
+      "provisions/{jur}/{doc}/{run_id}.jsonl   one ProvisionRecord per line\n" +
+      "coverage/{jur}/{doc}/{run_id}.json   inventory ↔ provisions diff report",
+    rationale:
+      "JSONL is the contract between adapter and loader. Append-friendly, streamable, " +
+      "grep-friendly, diff-friendly in git. Same line-oriented file produces both R2 " +
+      "mirror (sync-r2) and Supabase rows (load-supabase).",
+    important: [
+      "Each line is one ProvisionRecord.to_mapping(), JSON-encoded with sort_keys=True. " +
+        "Two runs on the same input produce byte-identical files — critical for " +
+        "deterministic diffs.",
+      "Required fields per line: jurisdiction, document_class, citation_path. " +
+        "Everything else is optional and emitted only when non-null.",
+      "Reader is NOT streaming today — load_provisions reads the whole file then " +
+        "splits. Fine for current sizes (<300 MB) but would OOM on >1 GB inputs.",
+      "UTF-8 throughout. Tolerates French ligatures, em-dashes, fancy quotes.",
+    ],
   },
 
   // ── Cold storage ──────────────────────────────────────────────────
@@ -195,8 +357,22 @@ export const NODES: NodeSpec[] = [
     repo: "infrastructure",
     summary: "Durable provenance store",
     detail:
-      "Cloudflare R2 bucket 'axiom-corpus'. Mirror of data/corpus/, same key " +
-      "layout. Forensic replay and audit surface.",
+      "Cloudflare R2 bucket 'axiom-corpus'. Mirror of the local data/corpus/ tree, " +
+      "same key layout. Holds raw upstream bytes and JSONL artifacts.",
+    mechanics:
+      "sync-r2 computes a sha256 for each local file, lists the bucket, uploads only " +
+      "missing or changed files. Workers in parallel for big runs.",
+    rationale:
+      "Provenance / forensics. Lets you replay any historical ingest, prove what was " +
+      "ingested when, and serve large assets without hitting Supabase. Pipeline can " +
+      "rebuild Supabase from R2 alone.",
+    important: [
+      "Nothing in production serving reads from R2 today — it's audit/replay only. " +
+        "If no downstream consumer ever materializes, this is dead weight worth removing.",
+      "Credentials at ~/.config/axiom-foundation/r2-credentials.json.",
+      "Bucket size is sub-GB today, well within R2's free tier.",
+    ],
+    commands: ["sync-r2", "artifact-report", "release-artifact-manifest"],
   },
 
   // ── Hot storage (Supabase) ────────────────────────────────────────
@@ -207,8 +383,18 @@ export const NODES: NodeSpec[] = [
     repo: "infrastructure",
     summary: "Postgres + PostgREST",
     detail:
-      "Live serving database. App reads via REST with Accept-Profile: corpus. " +
-      "Schemas: corpus, encodings, telemetry, app.",
+      "Managed Postgres + PostgREST hosted by Supabase. Live serving database. " +
+      "Schemas: corpus (legal text + nav), encodings (encoder run history), telemetry " +
+      "(observability), app (frontend state).",
+    mechanics:
+      "Apps read via REST endpoints with `Accept-Profile: corpus` header to scope to " +
+      "the corpus schema. Loader uses POST with `Prefer: resolution=merge-duplicates` " +
+      "for idempotent upserts.",
+    important: [
+      "Project ref: swocpijqqahhuwtuahwc. URL: swocpijqqahhuwtuahwc.supabase.co.",
+      "Service-role key needed for writes; anon key suffices for reads.",
+      "RLS is enabled on every corpus table. Public SELECT, no public writes.",
+    ],
   },
   {
     id: "provisions",
@@ -217,8 +403,28 @@ export const NODES: NodeSpec[] = [
     repo: "infrastructure",
     summary: "Source of truth for legal text",
     detail:
-      "Normalized rows from JSONL. Indexed by citation_path. Holds body text, " +
-      "metadata, deterministic UUID5 ids.",
+      "The primary table in the corpus schema. One row per provision. ~1.75M rows " +
+      "across all jurisdictions. Holds body text plus metadata.",
+    mechanics:
+      "Indexed by (jurisdiction, doc_type, id) for scope queries, citation_path with " +
+      "text_pattern_ops for prefix scans, parent_id for tree walks, gin index on " +
+      "identifiers for jsonb lookups. Loaded in chunks of 500 rows via PostgREST upsert.",
+    rationale:
+      "Single source of truth for legal text. Every other corpus.* surface " +
+      "(navigation_nodes, provision_counts, references) is derived from this table and " +
+      "rebuildable in minutes.",
+    important: [
+      "IDs are deterministic UUID5 of 'axiom:' + citation_path. Same path → same id, " +
+        "forever. Re-runs upsert in place.",
+      "Loader projects parent_id from parent_citation_path automatically — adapters " +
+        "set the path, the loader sets the id.",
+      "Schema is intentionally wide: 20+ columns including source_url, " +
+        "source_document_id, expression_date, language, legal_identifier, identifiers " +
+        "(jsonb), and the FTS column for full-text search.",
+      "citation_path is nullable today — a holdover from the original Canada ingestion. " +
+        "Once Canada is fully re-extracted we should ALTER TABLE … SET NOT NULL.",
+    ],
+    commands: ["load-supabase", "export-supabase", "snapshot-provision-counts"],
   },
   {
     id: "navigation",
@@ -227,9 +433,33 @@ export const NODES: NodeSpec[] = [
     repo: "infrastructure",
     summary: "Derived tree-navigation index",
     detail:
-      "Precomputed parent/child rows rebuilt from corpus.provisions. Replaces " +
-      "prefix-LIKE scans. Carries has_rulespec and encoded_descendant_count " +
-      "for encoded-only browsing.",
+      "Precomputed parent/child rows for fast tree navigation. One row per provision " +
+      "(plus synthesized act-level containers for some jurisdictions). ~1.75M rows.",
+    mechanics:
+      "Each row has path, parent_path, segment, label, sort_key (natural-ordered with " +
+      "zero-padded numerics), depth, child_count, has_children, has_rulespec, " +
+      "encoded_descendant_count, status, timestamps. Indexed on (parent_path, " +
+      "sort_key) for the app's primary lookup; partial index on " +
+      "encoded_descendant_count > 0 OR has_rulespec for encoded-only browsing.",
+    rationale:
+      "The app used to derive tree navigation live via prefix-LIKE scans against " +
+      "corpus.provisions. As state corpora grew those queries started hitting " +
+      "Supabase's statement timeout. navigation_nodes turns the same lookup into a " +
+      "single indexed parent_path query.",
+    important: [
+      "Disposable. If wrong, rebuild from corpus.provisions with " +
+        "build-navigation-index. Cycles in parent_citation_path get broken automatically " +
+        "(one node promoted to root, rest reach it).",
+      "Auto-rebuilt as a post-step of load-supabase for every loaded scope, since PR #23.",
+      "has_rulespec is set when a matching path exists in local rules-* checkouts at " +
+        "rebuild time. encoded_descendant_count rolls up bottom-up.",
+      "Status field is editorial metadata (e.g. 'deprecated', 'in-review') — preserved " +
+        "across rebuilds via fetch_navigation_statuses + _apply_navigation_status_overrides.",
+      "Sharp edge: if you run load-supabase in CI without local rules-* checkouts, " +
+        "the rebuild silently demotes has_rulespec to false for paths whose encoding " +
+        "the checkout-less worker can't see.",
+    ],
+    commands: ["build-navigation-index"],
   },
   {
     id: "counts",
@@ -238,7 +468,16 @@ export const NODES: NodeSpec[] = [
     repo: "infrastructure",
     summary: "Materialized view",
     detail:
-      "Per-(jurisdiction, doc_type) totals. Refreshed via RPC at load time.",
+      "Per-(jurisdiction, doc_type) row counts. Refreshed via SQL RPC at the end of " +
+      "every load-supabase run.",
+    rationale:
+      "Counting 1.75M rows live across all jurisdictions is slow. Materialized view " +
+      "gives the analytics dashboard a cheap snapshot to read from.",
+    important: [
+      "Can drift if the refresh times out and --allow-refresh-failure was passed. " +
+        "Re-running load-supabase (or refresh_corpus_analytics RPC directly) fixes it.",
+      "Read by the analytics dashboard and the artifact-report command.",
+    ],
   },
   {
     id: "references",
@@ -246,7 +485,13 @@ export const NODES: NodeSpec[] = [
     layer: "storage-hot",
     repo: "infrastructure",
     summary: "Cross-reference graph",
-    detail: "Inter-provision citations extracted by extract-references.",
+    detail:
+      "Graph of inter-provision citations. Each row links a citing provision to a " +
+      "cited one.",
+    rationale:
+      "Powers the app's 'cited by' / 'cites' UI. Without this, finding cross-references " +
+      "would require scanning every body text.",
+    commands: ["extract-references"],
   },
 
   // ── Rules repos ───────────────────────────────────────────────────
@@ -257,8 +502,29 @@ export const NODES: NodeSpec[] = [
     repo: "rules-us",
     summary: "US federal RuleSpec YAML",
     detail:
-      "Per-provision YAML encodings of US federal statutes / regulations / " +
-      "policies. Local checkout drives has_rulespec at nav rebuild time.",
+      "RuleSpec YAML files encoding executable computation for US federal benefit " +
+      "programs. Per-provision: one YAML per addressable section / subsection.",
+    mechanics:
+      "File path encodes the citation: statutes/26/3111/a.yaml ↔ us/statute/26/3111/a. " +
+      "Same convention for regulations/ (with -cfr suffix stripped on US-federal) and " +
+      "policies/.",
+    rationale:
+      "Encoding lives in separate repos so the corpus stays purely about source text. " +
+      "Encoding cadence and corpus cadence are independent — you can add a new rule " +
+      "without touching the corpus, and re-ingest the corpus without breaking rules.",
+    important: [
+      "Loosely coupled to corpus by citation_path only.",
+      "Path mapping mirrored in axiom-corpus/src/axiom_corpus/corpus/rulespec_paths.py.",
+      "Test files (.test.yaml) and meta files (.meta.yaml) are skipped at discovery.",
+      "Discovered at nav rebuild time by walking the local checkout. No GitHub API " +
+        "calls during corpus operations.",
+      "~24 encoded paths today, mostly SNAP regulations (CFR Title 7 Part 273).",
+    ],
+    files: [
+      "rules-us/statutes/",
+      "rules-us/regulations/",
+      "rules-us/policies/",
+    ],
   },
   {
     id: "rules-state",
@@ -267,8 +533,15 @@ export const NODES: NodeSpec[] = [
     repo: "rules-us-state",
     summary: "Per-state RuleSpec",
     detail:
-      "rules-us-co, rules-us-tx, … One repo per state. Same convention as " +
-      "rules-us.",
+      "One repo per state (rules-us-co, rules-us-tx, rules-us-ca, …). Same convention " +
+      "as rules-us. State-specific regulations and agency policy.",
+    important: [
+      "rules-us-co is the most-encoded today (~34 paths under " +
+        "regulations/10-ccr-2506-1/ for Colorado SNAP).",
+      "Other state repos exist but are mostly empty placeholders.",
+      "Adding a new state means creating the repo, adding it to repo-map.ts in the " +
+        "app, and adding it to JURISDICTION_REPO_MAP in rulespec_paths.py.",
+    ],
   },
   {
     id: "rules-other",
@@ -276,7 +549,15 @@ export const NODES: NodeSpec[] = [
     layer: "rules",
     repo: "rules-non-us",
     summary: "Non-US RuleSpec",
-    detail: "UK and Canadian encoded rules. Same convention as US repos.",
+    detail:
+      "UK and Canadian RuleSpec repos. Same convention as the US repos but different " +
+      "path conventions per jurisdiction's citation scheme.",
+    important: [
+      "rules-uk holds 146 has_rulespec rows on the corpus side — most of those came " +
+        "from pre-existing has_rulespec flags in corpus.provisions, not from current " +
+        "rules-uk YAML files.",
+      "rules-ca is the canonical Canadian repo. Maps from canada/* corpus paths.",
+    ],
   },
 
   // ── Consumers ─────────────────────────────────────────────────────
@@ -287,8 +568,23 @@ export const NODES: NodeSpec[] = [
     repo: "axiom-foundation.org",
     summary: "Main web app",
     detail:
-      "Public-facing browser of the corpus. Reads corpus.navigation_nodes for " +
-      "tree navigation; reads corpus.provisions for body text.",
+      "Public-facing browser of the corpus at axiom-foundation.org. Next.js app, " +
+      "deployed to Vercel.",
+    mechanics:
+      "Reads corpus.navigation_nodes for tree navigation (parent_path lookups), " +
+      "corpus.provisions for body text, corpus.provision_references for cross-refs. " +
+      "PostgREST client with Accept-Profile: corpus header on every call.",
+    rationale:
+      "Read-only consumer. Should never be the only place a citation lookup happens — " +
+      "the API surface is the source of truth.",
+    important: [
+      "src/lib/axiom/repo-map.ts is authoritative for jurisdiction → rules-* repo " +
+        "mapping. axiom-corpus mirrors this in rulespec_paths.py; keep in sync when " +
+        "new jurisdictions land.",
+      "src/lib/axiom/rulespec/repo-listing.ts converts repo paths to citation paths " +
+        "(and vice versa) for the encoded-rules UI surface.",
+      "Never writes to Supabase. Read-only RLS suffices.",
+    ],
   },
   {
     id: "finbot",
@@ -297,7 +593,11 @@ export const NODES: NodeSpec[] = [
     repo: "axiom-foundation.org",
     summary: "Financial advice demo",
     detail:
-      "Demo that calls Supabase + RuleSpec to answer benefit / tax questions.",
+      "Demo that combines corpus citations with RuleSpec computation to answer " +
+      "benefit / tax questions in natural language. Local repo.",
+    mechanics:
+      "Calls Supabase REST + a RuleSpec runtime to compute eligibility / benefit " +
+      "amounts, then surfaces the actual source provisions that drove the answer.",
   },
   {
     id: "dashboard-builder",
@@ -305,7 +605,8 @@ export const NODES: NodeSpec[] = [
     layer: "consumer",
     repo: "axiom-foundation.org",
     summary: "Dashboard demo",
-    detail: "Demo for assembling policy dashboards on top of the corpus.",
+    detail:
+      "Demo for assembling policy dashboards on top of the corpus.",
   },
   {
     id: "axiom-encode",
@@ -314,8 +615,21 @@ export const NODES: NodeSpec[] = [
     repo: "axiom-encode",
     summary: "Encoder pipeline",
     detail:
-      "Reads corpus.provisions to know what to encode against, writes RuleSpec " +
-      "YAML into the rules-* repos. Coupled to corpus only via citation paths.",
+      "Drives the creation of RuleSpec YAML for provisions in the corpus. Combines " +
+      "LLM workflows with structured validation, then opens PRs against rules-* repos.",
+    mechanics:
+      "Reads corpus.provisions to know what provisions exist. For a target provision, " +
+      "drafts a candidate RuleSpec via prompt orchestration, validates against " +
+      "machine-readable test cases, iterates until clean, then writes YAML.",
+    rationale:
+      "Encoding is the bottleneck for downstream usefulness. Only ~60 RuleSpec files " +
+      "exist today across 1.75M provisions. Any tool that compounds encoder throughput " +
+      "is high-leverage.",
+    important: [
+      "One-way dependency on corpus. The encoder NEVER writes to corpus.provisions.",
+      "Closes the feedback loop indirectly — the next navigation rebuild observes " +
+        "newly-authored YAML and sets has_rulespec=true.",
+    ],
   },
 ];
 

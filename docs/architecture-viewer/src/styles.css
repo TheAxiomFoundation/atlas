@@ -517,6 +517,53 @@ body::before {
   line-height: 1.5;
 }
 
+.detail-panel__body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-ink-secondary);
+  white-space: pre-wrap;
+}
+
+.detail-panel__list {
+  margin: 0;
+  padding: 0 0 0 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-ink-secondary);
+  list-style-type: square;
+}
+
+.detail-panel__list li + li {
+  margin-top: 8px;
+}
+
+.detail-panel__list li::marker {
+  color: var(--color-accent);
+}
+
+.detail-panel__codelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-panel__codelist code {
+  display: inline-block;
+  width: 100%;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  background: var(--color-paper);
+  padding: 5px 8px;
+  border: 1px solid var(--color-rule);
+  border-radius: 3px;
+  color: var(--color-ink);
+  word-break: break-all;
+}
+
 .detail-panel__repo {
   padding: 10px 12px;
   background: var(--color-paper);
