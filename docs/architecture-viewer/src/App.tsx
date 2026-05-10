@@ -80,14 +80,19 @@ function toRfEdges(
       label: edge.label,
       labelStyle: {
         fontSize: 11,
-        fill: highlighted ? "#92400e" : "#57534e",
+        fill: highlighted ? "#92400e" : "#1c1917",
         fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
+        fontWeight: 500,
       },
+      labelShowBg: true,
       labelBgStyle: {
-        fill: "#faf9f6",
-        fillOpacity: 0.95,
+        fill: "#ffffff",
+        fillOpacity: 1,
+        stroke: highlighted ? "#92400e" : "#e7e5e4",
+        strokeWidth: 1,
       },
-      labelBgPadding: [4, 2],
+      labelBgPadding: [10, 5],
+      labelBgBorderRadius: 3,
       style: {
         stroke: highlighted ? "#92400e" : style.stroke,
         strokeWidth: highlighted ? style.strokeWidth + 1 : style.strokeWidth,
