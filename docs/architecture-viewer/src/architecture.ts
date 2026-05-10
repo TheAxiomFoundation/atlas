@@ -363,105 +363,47 @@ export type Layout = {
 
 const N = (id: string, x: number, y: number) => ({ id, x, y });
 
-const ALL_NODE_IDS = new Set(NODES.map((n) => n.id));
 const edgesAmong = (ids: Set<string>) =>
   EDGES.filter((e) => ids.has(e.from) && ids.has(e.to));
 
-const OVERVIEW_IDS = new Set([
-  "ecfr",
-  "usc",
-  "state-sources",
-  "canada-source",
-  "irs-bulk",
-  "fetchers",
-  "parsers",
-  "adapters",
-  "artifacts",
-  "r2",
-  "provisions",
-  "navigation",
-  "rules-us",
-  "rules-state",
-  "rules-other",
-  "axiom-foundation",
-  "finbot",
-  "dashboard-builder",
-]);
-
-function byRepoLayout() {
-  const ORDER: Repo[] = [
-    "external",
-    "axiom-corpus",
-    "infrastructure",
-    "axiom-encode",
-    "rules-us",
-    "rules-us-state",
-    "rules-non-us",
-    "axiom-foundation.org",
-  ];
-  const COLUMN_X = 60;
-  const COLUMN_GAP = 340;
-  const ROW_Y = 120;
-  const ROW_GAP = 150;
-
-  const out: Array<{ id: string; x: number; y: number }> = [];
-  ORDER.forEach((repoId, columnIndex) => {
-    const nodesInRepo = NODES.filter((n) => n.repo === repoId);
-    nodesInRepo.forEach((node, rowIndex) => {
-      out.push({
-        id: node.id,
-        x: COLUMN_X + columnIndex * COLUMN_GAP,
-        y: ROW_Y + rowIndex * ROW_GAP,
-      });
-    });
-  });
-  return out;
-}
-
+// Sequential story arc. Each scene builds on the previous: start with the
+// upstream sources, walk through ingest, then storage, then encoding, then
+// the full pipeline including consumers. Repo identity stays present on
+// every card eyebrow throughout, so there's no need for a separate
+// "by repo" view.
 export const LAYOUTS: Layout[] = [
+  // ═══════════════════════════════════════════════════════════════
+  // § 01 — where the corpus begins. Just the upstream publishers.
+  // ═══════════════════════════════════════════════════════════════
   {
-    id: "overview",
-    title: "End-to-end pipeline",
-    eyebrow: "§ 01 · Overview",
+    id: "sources",
+    title: "Where the corpus begins",
+    eyebrow: "§ 01 · Sources",
     description:
-      "Upstream publishers on the left, ingest in the middle, durable + serving " +
-      "storage to the right, consumers at the far right.",
+      "Five categories of official publishers. We snapshot them — never change " +
+      "what we ingest. Hover any source to see what we pull from it.",
     nodes: [
-      // Column 1: upstream sources — wider vertical spacing
-      N("ecfr", 40, 40),
-      N("usc", 40, 200),
-      N("state-sources", 40, 360),
-      N("canada-source", 40, 520),
-      N("irs-bulk", 40, 680),
-      // Column 2: ingest layer
-      N("fetchers", 460, 200),
-      N("parsers", 460, 380),
-      N("adapters", 460, 560),
-      // Column 3: artifact tree
-      N("artifacts", 880, 380),
-      // Column 4: storage stack (R2 cold, then live tables)
-      N("r2", 1300, 100),
-      N("provisions", 1300, 280),
-      N("navigation", 1300, 460),
-      // Column 4 (continued): rules below navigation — has_rulespec arrows
-      // travel straight up to navigation without crossing other edges
-      N("rules-us", 1300, 680),
-      N("rules-state", 1300, 820),
-      N("rules-other", 1300, 960),
-      // Column 5: consumers
-      N("axiom-foundation", 1720, 280),
-      N("finbot", 1720, 460),
-      N("dashboard-builder", 1720, 640),
+      N("ecfr", 80, 80),
+      N("usc", 80, 240),
+      N("state-sources", 80, 400),
+      N("canada-source", 80, 560),
+      N("irs-bulk", 80, 720),
     ],
-    edges: edgesAmong(OVERVIEW_IDS),
+    edges: [],
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  // § 02 — bytes become structured data. Adds ingest layer + JSONL.
+  // ═══════════════════════════════════════════════════════════════
   {
     id: "ingest",
-    title: "Ingest stages",
+    title: "From bytes to JSONL",
     eyebrow: "§ 02 · Ingest",
     description:
-      "How a single upstream document becomes a row in corpus.provisions. " +
-      "JSONL is the contract between adapter and loader.",
+      "Each upstream source flows through a fetcher, a parser, and a " +
+      "source-first adapter. The adapter projects parser output into " +
+      "ProvisionRecord rows and writes them to a local JSONL artifact tree — " +
+      "the contract that every downstream stage reads from.",
     nodes: [
       N("ecfr", 60, 80),
       N("canada-source", 60, 240),
@@ -470,27 +412,33 @@ export const LAYOUTS: Layout[] = [
       N("parsers", 800, 240),
       N("adapters", 1140, 240),
       N("artifacts", 1480, 240),
-      N("provisions", 1820, 100),
-      N("r2", 1820, 380),
     ],
-    edges: [
-      { from: "ecfr", to: "fetchers", kind: "solid" },
-      { from: "canada-source", to: "fetchers", kind: "solid" },
-      { from: "state-sources", to: "fetchers", kind: "solid" },
-      { from: "fetchers", to: "parsers", kind: "solid", label: "bytes" },
-      { from: "parsers", to: "adapters", kind: "solid", label: "typed models" },
-      { from: "adapters", to: "artifacts", kind: "solid", label: "JSONL" },
-      { from: "artifacts", to: "provisions", kind: "solid", label: "load-supabase" },
-      { from: "artifacts", to: "r2", kind: "solid", label: "sync-r2" },
-    ],
+    edges: edgesAmong(
+      new Set([
+        "ecfr",
+        "canada-source",
+        "state-sources",
+        "fetchers",
+        "parsers",
+        "adapters",
+        "artifacts",
+      ]),
+    ),
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  // § 03 — where the JSONL lands. Cold storage (R2) + live Supabase
+  // and its derived tables.
+  // ═══════════════════════════════════════════════════════════════
   {
     id: "storage",
-    title: "Storage layers",
+    title: "Where it lands",
     eyebrow: "§ 03 · Storage",
     description:
-      "Source of truth versus derived. Everything below corpus.provisions is " +
-      "rebuildable in minutes.",
+      "The same JSONL produces a durable R2 mirror and a live Supabase " +
+      "snapshot. corpus.provisions is the source of truth for legal text; " +
+      "corpus.navigation_nodes, provision_counts, and references are derived " +
+      "and rebuildable in minutes.",
     nodes: [
       N("artifacts", 80, 320),
       N("r2", 500, 100),
@@ -498,8 +446,6 @@ export const LAYOUTS: Layout[] = [
       N("navigation", 920, 100),
       N("counts", 920, 280),
       N("references", 920, 460),
-      N("rules-us", 500, 660),
-      N("rules-state", 920, 660),
     ],
     edges: [
       { from: "artifacts", to: "r2", kind: "solid", label: "sync-r2" },
@@ -507,35 +453,30 @@ export const LAYOUTS: Layout[] = [
       { from: "provisions", to: "navigation", kind: "derived", label: "build-nav-index" },
       { from: "provisions", to: "counts", kind: "derived", label: "RPC refresh" },
       { from: "provisions", to: "references", kind: "derived", label: "extract-references" },
-      { from: "rules-us", to: "navigation", kind: "derived", label: "has_rulespec" },
-      { from: "rules-state", to: "navigation", kind: "derived", label: "has_rulespec" },
     ],
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  // § 04 — how rules emerge from law. The encoder, the rules-*
+  // repos, and the has_rulespec loop back into navigation.
+  // ═══════════════════════════════════════════════════════════════
   {
-    id: "boundaries",
-    title: "Repository boundaries",
-    eyebrow: "§ 04 · Boundaries",
+    id: "encoding",
+    title: "Law becomes rules",
+    eyebrow: "§ 04 · Encoding",
     description:
-      "Each block lives in a specific repo. Hard rules about who writes what: " +
-      "apps never write to corpus; the encoder never writes provisions; rules-* " +
-      "are observed, never authoritative for legal text.",
+      "axiom-encode reads the corpus to know what to encode against, writes " +
+      "RuleSpec YAML into rules-* repos, and the next navigation rebuild " +
+      "observes that coverage via has_rulespec — closing the loop.",
     nodes: [
-      N("state-sources", 60, 340),
-      N("adapters", 460, 340),
-      N("provisions", 860, 160),
-      N("navigation", 860, 380),
-      N("axiom-encode", 860, 700),
-      N("rules-us", 1260, 540),
-      N("rules-state", 1260, 700),
-      N("rules-other", 1260, 860),
-      N("axiom-foundation", 1660, 160),
-      N("finbot", 1660, 340),
-      N("dashboard-builder", 1660, 520),
+      N("provisions", 80, 200),
+      N("axiom-encode", 480, 200),
+      N("rules-us", 880, 60),
+      N("rules-state", 880, 220),
+      N("rules-other", 880, 380),
+      N("navigation", 1280, 220),
     ],
     edges: [
-      { from: "state-sources", to: "adapters", kind: "solid", label: "ingest" },
-      { from: "adapters", to: "provisions", kind: "solid", label: "load" },
-      { from: "provisions", to: "navigation", kind: "derived" },
       { from: "provisions", to: "axiom-encode", kind: "read", label: "reads text" },
       { from: "axiom-encode", to: "rules-us", kind: "solid", label: "writes YAML" },
       { from: "axiom-encode", to: "rules-state", kind: "solid", label: "writes YAML" },
@@ -543,21 +484,73 @@ export const LAYOUTS: Layout[] = [
       { from: "rules-us", to: "navigation", kind: "derived", label: "has_rulespec" },
       { from: "rules-state", to: "navigation", kind: "derived", label: "has_rulespec" },
       { from: "rules-other", to: "navigation", kind: "derived", label: "has_rulespec" },
-      { from: "navigation", to: "axiom-foundation", kind: "read", label: "REST" },
-      { from: "provisions", to: "axiom-foundation", kind: "read" },
-      { from: "provisions", to: "finbot", kind: "read" },
-      { from: "provisions", to: "dashboard-builder", kind: "read" },
+      { from: "provisions", to: "navigation", kind: "derived", label: "build-nav-index" },
     ],
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  // § 05 — everything assembled, end to end. The card eyebrows
+  // make every repo boundary visible at a glance.
+  // ═══════════════════════════════════════════════════════════════
   {
-    id: "by-repo",
-    title: "By repository",
-    eyebrow: "§ 05 · Repos",
+    id: "end-to-end",
+    title: "End to end",
+    eyebrow: "§ 05 · Pipeline",
     description:
-      "Every component grouped by the repo that owns it. Tells you exactly where " +
-      "to make a change.",
-    nodes: byRepoLayout(),
-    edges: edgesAmong(ALL_NODE_IDS),
+      "All pieces in one frame. Upstream publishers, ingest, storage, encoder, " +
+      "rules, and the read-only consumers. The repo eyebrow on every card " +
+      "tells you exactly who owns what.",
+    nodes: [
+      // Upstream
+      N("ecfr", 40, 40),
+      N("usc", 40, 200),
+      N("state-sources", 40, 360),
+      N("canada-source", 40, 520),
+      N("irs-bulk", 40, 680),
+      // Ingest
+      N("fetchers", 460, 200),
+      N("parsers", 460, 380),
+      N("adapters", 460, 560),
+      // Artifacts
+      N("artifacts", 880, 380),
+      // Storage stack
+      N("r2", 1300, 100),
+      N("provisions", 1300, 280),
+      N("navigation", 1300, 460),
+      // Rules below navigation
+      N("rules-us", 1300, 680),
+      N("rules-state", 1300, 820),
+      N("rules-other", 1300, 960),
+      // Encoder beside rules
+      N("axiom-encode", 880, 820),
+      // Consumers
+      N("axiom-foundation", 1720, 280),
+      N("finbot", 1720, 460),
+      N("dashboard-builder", 1720, 640),
+    ],
+    edges: edgesAmong(
+      new Set([
+        "ecfr",
+        "usc",
+        "state-sources",
+        "canada-source",
+        "irs-bulk",
+        "fetchers",
+        "parsers",
+        "adapters",
+        "artifacts",
+        "r2",
+        "provisions",
+        "navigation",
+        "rules-us",
+        "rules-state",
+        "rules-other",
+        "axiom-encode",
+        "axiom-foundation",
+        "finbot",
+        "dashboard-builder",
+      ]),
+    ),
   },
 ];
 
