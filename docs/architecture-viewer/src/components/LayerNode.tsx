@@ -1,76 +1,58 @@
 import { Handle, Position } from "@xyflow/react";
-import type { Layer } from "../architecture";
+import type { Layer, Repo } from "../architecture";
 
-const LAYER_STYLES: Record<Layer, { background: string; border: string; accent: string }> = {
-  upstream: {
-    background: "#fef3c7",
-    border: "#d97706",
-    accent: "#92400e",
-  },
-  ingest: {
-    background: "#dbeafe",
-    border: "#1d4ed8",
-    accent: "#1e3a8a",
-  },
-  "storage-cold": {
-    background: "#e5e7eb",
-    border: "#4b5563",
-    accent: "#1f2937",
-  },
-  "storage-hot": {
-    background: "#dcfce7",
-    border: "#15803d",
-    accent: "#14532d",
-  },
-  rules: {
-    background: "#ede9fe",
-    border: "#6d28d9",
-    accent: "#4c1d95",
-  },
-  consumer: {
-    background: "#fce7f3",
-    border: "#be185d",
-    accent: "#831843",
-  },
+const REPO_LABEL: Record<Repo, string> = {
+  "axiom-corpus": "axiom-corpus",
+  "axiom-encode": "axiom-encode",
+  "axiom-foundation.org": "axiom-foundation.org",
+  "rules-us": "rules-us",
+  "rules-us-state": "rules-us-{*}",
+  "rules-non-us": "rules-uk · rules-ca",
+  infrastructure: "Managed infra",
+  external: "External source",
+};
+
+const LAYER_GLYPH: Record<Layer, string> = {
+  upstream: "§",
+  ingest: "→",
+  "storage-cold": "□",
+  "storage-hot": "■",
+  rules: "¶",
+  consumer: "◇",
 };
 
 export type LayerNodeData = {
   label: string;
   summary: string;
   layer: Layer;
+  repo: Repo;
   selected: boolean;
+  related: boolean;
+  dimmed: boolean;
   [key: string]: unknown;
 };
 
 export function LayerNode({ data }: { data: LayerNodeData }) {
-  const palette = LAYER_STYLES[data.layer];
+  const cls = [
+    "axiom-node",
+    `axiom-node--${data.layer}`,
+    data.selected ? "axiom-node--selected" : "",
+    data.related ? "axiom-node--related" : "",
+    data.dimmed ? "axiom-node--dimmed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div
-      style={{
-        background: palette.background,
-        border: `2px solid ${palette.border}`,
-        borderRadius: 8,
-        padding: "10px 14px",
-        minWidth: 180,
-        maxWidth: 220,
-        boxShadow: data.selected ? `0 0 0 3px ${palette.border}55` : "0 1px 2px rgba(0,0,0,0.08)",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-      }}
-    >
-      <Handle type="target" position={Position.Left} style={{ background: palette.border }} />
-      <div
-        style={{
-          fontWeight: 600,
-          fontSize: 13,
-          color: palette.accent,
-          marginBottom: 4,
-          whiteSpace: "pre-wrap",
-        }}
-      >
-        {data.label}
+    <div className={cls}>
+      <Handle type="target" position={Position.Left} className="axiom-node__handle" />
+      <div className="axiom-node__eyebrow">
+        <span className="axiom-node__glyph">{LAYER_GLYPH[data.layer]}</span>
+        <span className="axiom-node__repo">{REPO_LABEL[data.repo]}</span>
       </div>
-      <div style={{ fontSize: 11, color: "#374151", lineHeight: 1.35 }}>{data.summary}</div>
-      <Handle type="source" position={Position.Right} style={{ background: palette.border }} />
+      <div className="axiom-node__title">{data.label}</div>
+      <div className="axiom-node__summary">{data.summary}</div>
+      <Handle type="source" position={Position.Right} className="axiom-node__handle" />
     </div>
   );
 }

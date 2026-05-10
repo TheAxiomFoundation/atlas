@@ -14,37 +14,46 @@ import type { LayerNodeData } from "./components/LayerNode";
 import { DetailPanel } from "./components/DetailPanel";
 import { SceneSwitcher } from "./components/SceneSwitcher";
 import {
-  EDGES as _EDGES,
   LAYOUTS,
   NODES,
+  REPOS,
+  neighborsOf,
   type EdgeSpec,
   type NodeSpec,
 } from "./architecture";
 
-void _EDGES;
-
 const NODE_TYPES = { layer: LayerNode };
 
-const EDGE_STYLES: Record<EdgeSpec["kind"], { stroke: string; strokeWidth: number; dash?: string }> = {
-  solid: { stroke: "#1f2937", strokeWidth: 2 },
-  derived: { stroke: "#6d28d9", strokeWidth: 2, dash: "4 4" },
-  read: { stroke: "#be185d", strokeWidth: 2, dash: "2 2" },
+const EDGE_STYLES: Record<
+  EdgeSpec["kind"],
+  { stroke: string; strokeWidth: number; dash?: string }
+> = {
+  solid: { stroke: "#1c1917", strokeWidth: 2 },
+  derived: { stroke: "#92400e", strokeWidth: 2, dash: "6 4" },
+  read: { stroke: "#78716c", strokeWidth: 1.5, dash: "2 4" },
 };
 
 function toRfNodes(
   layoutNodes: { id: string; x: number; y: number }[],
   catalog: Map<string, NodeSpec>,
   selectedId: string | null,
+  relatedIds: Set<string>,
 ): Node[] {
+  const hasSelection = selectedId !== null;
   const out: Node[] = [];
   for (const entry of layoutNodes) {
     const spec = catalog.get(entry.id);
     if (!spec) continue;
+    const isSelected = entry.id === selectedId;
+    const isRelated = relatedIds.has(entry.id);
     const data: LayerNodeData = {
       label: spec.label,
       summary: spec.summary,
       layer: spec.layer,
-      selected: selectedId === entry.id,
+      repo: spec.repo,
+      selected: isSelected,
+      related: isRelated,
+      dimmed: hasSelection && !isSelected && !isRelated,
     };
     out.push({
       id: entry.id,
@@ -56,24 +65,39 @@ function toRfNodes(
   return out;
 }
 
-function toRfEdges(layoutEdges: EdgeSpec[]): Edge[] {
+function toRfEdges(
+  layoutEdges: EdgeSpec[],
+  selectedId: string | null,
+): Edge[] {
   return layoutEdges.map((edge, index) => {
     const style = EDGE_STYLES[edge.kind];
+    const highlighted =
+      selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
+    const dimmed = selectedId !== null && !highlighted;
     return {
       id: `${edge.from}-${edge.to}-${index}`,
       source: edge.from,
       target: edge.to,
       label: edge.label,
-      labelStyle: { fontSize: 11, fill: "#374151", fontFamily: "system-ui" },
-      labelBgStyle: { fill: "#ffffff", fillOpacity: 0.9 },
+      labelStyle: {
+        fontSize: 11,
+        fill: highlighted ? "#92400e" : "#57534e",
+        fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
+      },
+      labelBgStyle: {
+        fill: "#faf9f6",
+        fillOpacity: 0.95,
+      },
       labelBgPadding: [4, 2],
       style: {
-        stroke: style.stroke,
-        strokeWidth: style.strokeWidth,
+        stroke: highlighted ? "#92400e" : style.stroke,
+        strokeWidth: highlighted ? style.strokeWidth + 1 : style.strokeWidth,
         strokeDasharray: style.dash,
+        opacity: dimmed ? 0.15 : 1,
+        transition: "stroke 200ms ease, opacity 200ms ease",
       },
       type: "smoothstep",
-      animated: edge.kind === "derived",
+      animated: edge.kind === "derived" && (highlighted || selectedId === null),
     };
   });
 }
@@ -89,11 +113,27 @@ export function App() {
     [activeLayoutId],
   );
 
-  const rfNodes = useMemo(
-    () => toRfNodes(layout.nodes, catalog, selectedId),
-    [layout, catalog, selectedId],
+  const neighbors = useMemo(
+    () => (selectedId ? neighborsOf(selectedId, layout.edges) : null),
+    [selectedId, layout.edges],
   );
-  const rfEdges = useMemo(() => toRfEdges(layout.edges), [layout]);
+
+  const relatedIds = useMemo(() => {
+    if (!neighbors) return new Set<string>();
+    const ids = new Set<string>();
+    for (const n of neighbors.incoming) ids.add(n.node.id);
+    for (const n of neighbors.outgoing) ids.add(n.node.id);
+    return ids;
+  }, [neighbors]);
+
+  const rfNodes = useMemo(
+    () => toRfNodes(layout.nodes, catalog, selectedId, relatedIds),
+    [layout, catalog, selectedId, relatedIds],
+  );
+  const rfEdges = useMemo(
+    () => toRfEdges(layout.edges, selectedId),
+    [layout, selectedId],
+  );
 
   const handleNodeClick = useCallback<NodeMouseHandler>((_, node) => {
     setSelectedId(node.id);
@@ -110,10 +150,12 @@ export function App() {
           setActiveLayoutId(id);
           setSelectedId(null);
         }}
+        repos={REPOS}
       />
       <main className="canvas">
         <header className="canvas__header">
-          <h1>{layout.title}</h1>
+          <div className="eyebrow">{layout.eyebrow}</div>
+          <h1 className="heading-section">{layout.title}</h1>
           <p>{layout.description}</p>
         </header>
         <div className="canvas__flow">
@@ -124,18 +166,29 @@ export function App() {
             onNodeClick={handleNodeClick}
             onPaneClick={() => setSelectedId(null)}
             fitView
-            fitViewOptions={{ padding: 0.15 }}
-            minZoom={0.3}
+            fitViewOptions={{ padding: 0.18 }}
+            minZoom={0.25}
             maxZoom={1.6}
             proOptions={{ hideAttribution: true }}
           >
-            <Background gap={20} size={1} color="#e5e7eb" />
+            <Background gap={24} size={1} color="#e7e5e4" />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor="#cbd5e1" maskColor="rgba(15, 23, 42, 0.04)" />
+            <MiniMap
+              pannable
+              zoomable
+              nodeColor="#e7e5e4"
+              maskColor="rgba(28, 25, 23, 0.04)"
+            />
           </ReactFlow>
         </div>
       </main>
-      <DetailPanel node={selectedNode} onClose={() => setSelectedId(null)} />
+      <DetailPanel
+        node={selectedNode}
+        incoming={neighbors?.incoming ?? []}
+        outgoing={neighbors?.outgoing ?? []}
+        onSelectNode={setSelectedId}
+        onClose={() => setSelectedId(null)}
+      />
     </div>
   );
 }

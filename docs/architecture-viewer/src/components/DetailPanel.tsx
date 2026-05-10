@@ -1,51 +1,132 @@
-import type { NodeSpec } from "../architecture";
+import type { EdgeSpec, NodeSpec, Repo } from "../architecture";
+import { REPOS } from "../architecture";
 
-const LAYER_LABEL: Record<NodeSpec["layer"], string> = {
-  upstream: "Upstream source",
-  ingest: "Ingest layer",
-  "storage-cold": "Cold storage",
-  "storage-hot": "Live database",
-  rules: "Rules repo",
-  consumer: "Consumer",
+const REPO_INFO: Record<Repo, { label: string; description: string }> = Object.fromEntries(
+  REPOS.map((r) => [r.id, { label: r.label, description: r.description }]),
+) as Record<Repo, { label: string; description: string }>;
+
+const EDGE_KIND_LABEL: Record<EdgeSpec["kind"], string> = {
+  solid: "writes",
+  derived: "derives",
+  read: "reads",
 };
 
 export function DetailPanel({
   node,
+  incoming,
+  outgoing,
+  onSelectNode,
   onClose,
 }: {
   node: NodeSpec | null;
+  incoming: { node: NodeSpec; edge: EdgeSpec }[];
+  outgoing: { node: NodeSpec; edge: EdgeSpec }[];
+  onSelectNode: (id: string) => void;
   onClose: () => void;
 }) {
   if (!node) {
     return (
       <aside className="detail-panel detail-panel--empty">
-        <h2>Click any node</h2>
+        <div className="kicker">
+          <span className="kicker-mark">§</span> Reader
+        </div>
+        <h2 className="detail-panel__h">Click a component</h2>
         <p>
-          The architecture is laid out left-to-right: upstream → ingest → storage → consumers.
-          Click on a node to see what it owns, where it lives in the repo, and how it connects to
-          its neighbors.
+          The architecture is laid out left-to-right: external publishers, ingest layer,
+          storage, then read-only consumers. Click any block to see what it owns, which
+          repository it lives in, and which other pieces it depends on.
         </p>
         <p>
-          Use the buttons on the left to switch between scenes. Drag to pan, scroll to zoom.
+          Switch between scenes on the left. The last scene groups components by the
+          repository that owns them.
         </p>
       </aside>
     );
   }
+
+  const repo = REPO_INFO[node.repo];
 
   return (
     <aside className="detail-panel">
       <button className="detail-panel__close" onClick={onClose} aria-label="Close">
         ×
       </button>
-      <div className="detail-panel__layer">{LAYER_LABEL[node.layer]}</div>
-      <h2>{node.label.replace(/\n/g, " ")}</h2>
+
+      <div className="kicker">
+        <span className="kicker-mark">§</span> {repo.label}
+      </div>
+      <h2 className="detail-panel__h">{node.label.replace(/\n/g, " ")}</h2>
       <p className="detail-panel__summary">{node.summary}</p>
-      <pre className="detail-panel__detail">{node.detail}</pre>
-      {node.source && (
-        <div className="detail-panel__source">
-          <span>Source:</span> <code>{node.source}</code>
+
+      <section className="detail-panel__section">
+        <div className="detail-panel__section-label">Detail</div>
+        <pre className="detail-panel__detail">{node.detail}</pre>
+      </section>
+
+      <section className="detail-panel__section">
+        <div className="detail-panel__section-label">Repository</div>
+        <div className="detail-panel__repo">
+          <div className="detail-panel__repo-name">{repo.label}</div>
+          <div className="detail-panel__repo-desc">{repo.description}</div>
         </div>
-      )}
+        {node.source && (
+          <div className="detail-panel__source">
+            <span>Source path:</span> <code>{node.source}</code>
+          </div>
+        )}
+      </section>
+
+      <section className="detail-panel__section">
+        <div className="detail-panel__section-label">Receives from</div>
+        {incoming.length === 0 ? (
+          <p className="detail-panel__empty-list">No upstream dependencies.</p>
+        ) : (
+          <ul className="detail-panel__edges">
+            {incoming.map(({ node: src, edge }, i) => (
+              <li key={i}>
+                <button
+                  className={`detail-panel__edge detail-panel__edge--${edge.kind}`}
+                  onClick={() => onSelectNode(src.id)}
+                >
+                  <span className="detail-panel__edge-verb">
+                    {EDGE_KIND_LABEL[edge.kind]}
+                  </span>
+                  <span className="detail-panel__edge-target">{src.label.replace(/\n/g, " ")}</span>
+                  {edge.label && (
+                    <span className="detail-panel__edge-label">— {edge.label}</span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="detail-panel__section">
+        <div className="detail-panel__section-label">Sends to</div>
+        {outgoing.length === 0 ? (
+          <p className="detail-panel__empty-list">Terminal — nothing reads from it.</p>
+        ) : (
+          <ul className="detail-panel__edges">
+            {outgoing.map(({ node: dst, edge }, i) => (
+              <li key={i}>
+                <button
+                  className={`detail-panel__edge detail-panel__edge--${edge.kind}`}
+                  onClick={() => onSelectNode(dst.id)}
+                >
+                  <span className="detail-panel__edge-verb">
+                    {EDGE_KIND_LABEL[edge.kind]}
+                  </span>
+                  <span className="detail-panel__edge-target">{dst.label.replace(/\n/g, " ")}</span>
+                  {edge.label && (
+                    <span className="detail-panel__edge-label">— {edge.label}</span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </aside>
   );
 }
