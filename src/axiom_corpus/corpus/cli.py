@@ -106,6 +106,7 @@ from axiom_corpus.corpus.state_adapters.new_york import (
     extract_new_york_consolidated_laws,
     extract_new_york_openleg_api,
 )
+from axiom_corpus.corpus.state_adapters.oklahoma import extract_oklahoma_statutes
 from axiom_corpus.corpus.state_adapters.oregon import (
     OREGON_ORS_DEFAULT_YEAR,
     extract_oregon_ors,
@@ -1986,6 +1987,23 @@ def _extract_state_statute_source(
             timeout_seconds=_optional_float(options.get("timeout_seconds")) or 180.0,
             request_attempts=_optional_int(options.get("request_attempts")) or 3,
         )
+    if adapter == "oklahoma-statutes":
+        return extract_oklahoma_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 4,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url"))
+            or "https://www.oklegislature.gov/OK_Statutes/CompleteTitles/",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.05,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
     if adapter == "montana-code":
         return extract_montana_code(
             store,
@@ -2382,6 +2400,10 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "new-jersey-statutes-text": "new-jersey-statutes",
         "nj-statutes": "new-jersey-statutes",
         "njsa": "new-jersey-statutes",
+        "ok": "oklahoma-statutes",
+        "oklahoma": "oklahoma-statutes",
+        "oklahoma-statutes": "oklahoma-statutes",
+        "ok-statutes": "oklahoma-statutes",
         "ny": "new-york-openleg-api",
         "new-york": "new-york-openleg-api",
         "new-york-openleg-api": "new-york-openleg-api",
@@ -2490,6 +2512,7 @@ def _state_statute_source_path_for_plan(
         "nevada-nrs",
         "new-hampshire-rsa",
         "new-jersey-statutes",
+        "oklahoma-statutes",
         "new-york-consolidated-laws",
         "new-york-openleg-api",
         "delaware-code",

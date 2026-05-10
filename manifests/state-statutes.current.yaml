@@ -491,6 +491,25 @@ sources:
     metadata:
       source_authority: Ohio Legislative Service Commission
 
+  - source_id: us-ok-statutes
+    jurisdiction: us-ok
+    document_class: statute
+    adapter: oklahoma-statutes
+    source_url: https://www.oklegislature.gov/OK_Statutes/CompleteTitles/
+    version: "2026-05-10"
+    options:
+      source_as_of: "2026-05-10"
+      expression_date: "2026-05-10"
+      download_dir: ../data/corpus/downloads/us-ok-statutes/2026-05-10
+      base_url: https://www.oklegislature.gov/OK_Statutes/CompleteTitles/
+      request_delay_seconds: 0.05
+      timeout_seconds: 60
+      request_attempts: 3
+      workers: 4
+    metadata:
+      source_authority: Oklahoma Legislature
+      source_scope_note: Current Oklahoma Statutes title RTF files from the official Legislature CompleteTitles directory.
+
   - source_id: us-or-ors
     jurisdiction: us-or
     document_class: statute

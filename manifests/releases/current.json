@@ -204,6 +204,11 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-ok",
+      "version": "2026-05-10"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-or",
       "version": "2026-05-06"
     },
