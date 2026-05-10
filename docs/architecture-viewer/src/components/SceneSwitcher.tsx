@@ -32,7 +32,6 @@ export function SceneSwitcher({
               >
                 <span className="scene-switcher__btn-eyebrow">{layout.eyebrow}</span>
                 <span className="scene-switcher__btn-title">{layout.title}</span>
-                <span className="scene-switcher__btn-description">{layout.description}</span>
               </button>
             </li>
           );

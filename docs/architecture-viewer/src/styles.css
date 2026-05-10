@@ -222,14 +222,6 @@ body::before {
   letter-spacing: -0.01em;
 }
 
-.scene-switcher__btn-description {
-  display: block;
-  font-size: 11px;
-  color: var(--color-ink-muted);
-  margin-top: 4px;
-  line-height: 1.45;
-}
-
 .scene-switcher__legend {
   margin-top: 32px;
   padding-top: 20px;
