@@ -10,6 +10,7 @@ import {
 
 import { LayerNode } from "./components/LayerNode";
 import type { LayerNodeData } from "./components/LayerNode";
+import { LabeledEdge } from "./components/LabeledEdge";
 import { DetailPanel } from "./components/DetailPanel";
 import { SceneSwitcher } from "./components/SceneSwitcher";
 import {
@@ -22,6 +23,7 @@ import {
 } from "./architecture";
 
 const NODE_TYPES = { layer: LayerNode };
+const EDGE_TYPES = { labeled: LabeledEdge };
 
 const EDGE_STYLES: Record<
   EdgeSpec["kind"],
@@ -78,15 +80,7 @@ function toRfEdges(
       source: edge.from,
       target: edge.to,
       label: edge.label,
-      labelStyle: {
-        fontSize: 11,
-        fill: highlighted ? "#92400e" : "#1c1917",
-        fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
-        fontWeight: 500,
-      },
-      labelShowBg: true,
-      labelBgPadding: [12, 6],
-      labelBgBorderRadius: 3,
+      data: { highlighted },
       style: {
         stroke: highlighted ? "#92400e" : style.stroke,
         strokeWidth: highlighted ? style.strokeWidth + 1 : style.strokeWidth,
@@ -94,7 +88,7 @@ function toRfEdges(
         opacity: dimmed ? 0.15 : 1,
         transition: "stroke 200ms ease, opacity 200ms ease",
       },
-      type: "smoothstep",
+      type: "labeled",
       animated: edge.kind === "derived" && (highlighted || selectedId === null),
     };
   });
@@ -162,6 +156,7 @@ export function App() {
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
             onNodeClick={handleNodeClick}
             onPaneClick={() => setSelectedId(null)}
             fitView

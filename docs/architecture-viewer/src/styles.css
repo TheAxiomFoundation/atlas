@@ -734,25 +734,30 @@ body::before {
   color: var(--color-accent);
 }
 
-/* Edge label chip — solid white background, hairline border, small radius.
-   Lives under .react-flow__edge .react-flow__edge-textbg in the DOM. */
-.react-flow__edge-textbg {
-  fill: #ffffff;
-  fill-opacity: 1;
-  stroke: var(--color-rule);
-  stroke-width: 1;
-  rx: 3;
-  ry: 3;
-}
-
-.react-flow__edge.selected .react-flow__edge-textbg,
-.react-flow__edge:hover .react-flow__edge-textbg {
-  stroke: var(--color-accent);
-}
-
-.react-flow__edge-text {
+/* HTML edge labels rendered via EdgeLabelRenderer — guaranteed to sit
+   above the SVG edge path layer. Pointer-events: none so clicks on the
+   chip pass through to the underlying canvas. */
+.edge-label {
+  position: absolute;
   font-family: var(--f-mono);
+  font-size: 11px;
   font-weight: 500;
+  line-height: 1;
+  color: var(--color-ink);
+  background: #ffffff;
+  border: 1px solid var(--color-rule);
+  border-radius: 3px;
+  padding: 5px 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  box-shadow: 0 0 0 2px var(--color-paper);
+  transition: border-color 200ms var(--ease-out), color 200ms var(--ease-out);
+}
+
+.edge-label--highlighted {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 ::selection {
