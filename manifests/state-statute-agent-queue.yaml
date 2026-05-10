@@ -18,11 +18,11 @@ policy:
 status_counts:
   done: 42
   blocked_release_repair: 0
-  blocked_primary_source: 2
-  agent_ready: 7
+  blocked_primary_source: 3
+  agent_ready: 6
 recommended_first_batch:
-  - us-mo
   - us-nh
+  - us-nj
 states:
   - jurisdiction: us-ne
     name: Nebraska
@@ -363,11 +363,11 @@ states:
     notes: Source-first Michigan Compiled Laws adapter is published and validated against official Legislature XML chapter files.
   - jurisdiction: us-mo
     name: Missouri
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
+    queue_status: blocked_primary_source
+    production_status: blocked_primary_source
     supabase_count: 702
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first adapter and tests were drafted against the official Revisor site, but the Revisor blocked this public IP during extraction after returning anti-speed pages; retry only after access is cleared or an official bulk/source export is available.
   - jurisdiction: us-nh
     name: New Hampshire
     queue_status: agent_ready

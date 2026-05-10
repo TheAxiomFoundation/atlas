@@ -88,6 +88,9 @@ from axiom_corpus.corpus.state_adapters.massachusetts import (
 from axiom_corpus.corpus.state_adapters.michigan import (
     extract_michigan_compiled_laws,
 )
+from axiom_corpus.corpus.state_adapters.missouri import (
+    extract_missouri_revised_statutes,
+)
 from axiom_corpus.corpus.state_adapters.montana import (
     MONTANA_CODE_DEFAULT_YEAR,
     extract_montana_code,
@@ -1932,6 +1935,23 @@ def _extract_state_statute_source(
             timeout_seconds=_optional_float(options.get("timeout_seconds")) or 120.0,
             request_attempts=_optional_int(options.get("request_attempts")) or 3,
         )
+    if adapter == "missouri-revised-statutes":
+        return extract_missouri_revised_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 8,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url"))
+            or "https://revisor.mo.gov/main/",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.02,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
     if adapter == "montana-code":
         return extract_montana_code(
             store,
@@ -2301,6 +2321,11 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "michigan-compiled-laws": "michigan-compiled-laws",
         "michigan-mcl": "michigan-compiled-laws",
         "mcl": "michigan-compiled-laws",
+        "mo": "missouri-revised-statutes",
+        "missouri": "missouri-revised-statutes",
+        "missouri-revised-statutes": "missouri-revised-statutes",
+        "missouri-rs": "missouri-revised-statutes",
+        "rsmo": "missouri-revised-statutes",
         "mt": "montana-code",
         "montana": "montana-code",
         "montana-code": "montana-code",
@@ -2414,6 +2439,7 @@ def _state_statute_source_path_for_plan(
         "maryland-code",
         "massachusetts-general-laws",
         "michigan-compiled-laws",
+        "missouri-revised-statutes",
         "montana-code",
         "nevada-nrs",
         "new-york-consolidated-laws",
