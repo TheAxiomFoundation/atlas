@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from "react";
 import {
   Background,
   Controls,
-  MiniMap,
   ReactFlow,
   type Edge,
   type Node,
@@ -174,12 +173,6 @@ export function App() {
           >
             <Background gap={24} size={1} color="#e7e5e4" />
             <Controls showInteractive={false} />
-            <MiniMap
-              pannable
-              zoomable
-              nodeColor="#e7e5e4"
-              maskColor="rgba(28, 25, 23, 0.04)"
-            />
           </ReactFlow>
         </div>
       </main>
