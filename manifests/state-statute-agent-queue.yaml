@@ -16,12 +16,11 @@ policy:
     - State Options Reports
   publication_requires_controller: true
 status_counts:
-  done: 46
+  done: 47
   blocked_release_repair: 0
   blocked_primary_source: 4
-  agent_ready: 1
-recommended_first_batch:
-  - us-wi
+  agent_ready: 0
+recommended_first_batch: []
 states:
   - jurisdiction: us-ne
     name: Nebraska
@@ -408,8 +407,9 @@ states:
     notes: Source-first Utah Code adapter is published and validated against official Legislature HTML/XML.
   - jurisdiction: us-wi
     name: Wisconsin
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 726
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-10"
+    provision_count: 19639
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first Wisconsin Statutes adapter is published and validated against official Legislature HTML.

@@ -125,6 +125,10 @@ from axiom_corpus.corpus.state_adapters.utah import (
     extract_utah_code,
 )
 from axiom_corpus.corpus.state_adapters.west_virginia import extract_west_virginia_code
+from axiom_corpus.corpus.state_adapters.wisconsin import (
+    WISCONSIN_STATUTES_TOC_URL,
+    extract_wisconsin_statutes,
+)
 from axiom_corpus.corpus.state_statute_completion import (
     build_state_statute_completion_report,
 )
@@ -2046,6 +2050,26 @@ def _extract_state_statute_source(
             request_attempts=_optional_int(options.get("request_attempts")) or 3,
             workers=_optional_int(options.get("workers")) or 8,
         )
+    if adapter == "wisconsin-statutes":
+        return extract_wisconsin_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_url=_optional_text(options.get("source_url"))
+            or source.source_url
+            or WISCONSIN_STATUTES_TOC_URL,
+            base_url=_optional_text(options.get("base_url"))
+            or "https://docs.legis.wisconsin.gov",
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.02,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 90.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            workers=_optional_int(options.get("workers")) or 8,
+        )
     if adapter == "montana-code":
         return extract_montana_code(
             store,
@@ -2456,6 +2480,11 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "utah-code": "utah-code",
         "utah-code-xml": "utah-code",
         "ut-code": "utah-code",
+        "wi": "wisconsin-statutes",
+        "wisconsin": "wisconsin-statutes",
+        "wisconsin-statutes": "wisconsin-statutes",
+        "wisconsin-code": "wisconsin-statutes",
+        "wi-statutes": "wisconsin-statutes",
         "ny": "new-york-openleg-api",
         "new-york": "new-york-openleg-api",
         "new-york-openleg-api": "new-york-openleg-api",
@@ -2567,6 +2596,7 @@ def _state_statute_source_path_for_plan(
         "oklahoma-statutes",
         "south-dakota-codified-laws",
         "utah-code",
+        "wisconsin-statutes",
         "new-york-consolidated-laws",
         "new-york-openleg-api",
         "delaware-code",

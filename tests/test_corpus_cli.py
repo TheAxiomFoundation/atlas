@@ -1504,6 +1504,81 @@ sources:
     assert payload["provisions_written"] == 1
 
 
+def test_extract_state_statutes_batch_passes_wisconsin_options(tmp_path, capsys, monkeypatch):
+    import axiom_corpus.corpus.cli as cli
+
+    base = tmp_path / "corpus"
+    manifest = tmp_path / "state-statutes.yaml"
+    manifest.write_text(
+        """
+version: "2026-05-10"
+sources:
+  - source_id: us-wi-statutes
+    jurisdiction: us-wi
+    document_class: statute
+    adapter: wisconsin-statutes
+    source_url: https://docs.legis.wisconsin.gov/statutes/prefaces/toc
+    version: "2026-05-10"
+    options:
+      source_as_of: "2026-04-03"
+      expression_date: "2026-04-03"
+      base_url: https://docs.legis.wisconsin.gov
+      request_delay_seconds: 0.05
+      timeout_seconds: 90
+      request_attempts: 5
+      workers: 8
+"""
+    )
+
+    def fake_wisconsin(*args, **kwargs):
+        assert kwargs["source_url"] == "https://docs.legis.wisconsin.gov/statutes/prefaces/toc"
+        assert kwargs["base_url"] == "https://docs.legis.wisconsin.gov"
+        assert kwargs["source_as_of"] == "2026-04-03"
+        assert kwargs["expression_date"] == "2026-04-03"
+        assert kwargs["request_delay_seconds"] == 0.05
+        assert kwargs["timeout_seconds"] == 90.0
+        assert kwargs["request_attempts"] == 5
+        assert kwargs["workers"] == 8
+        return StateStatuteExtractReport(
+            jurisdiction="us-wi",
+            title_count=1,
+            container_count=0,
+            section_count=1,
+            provisions_written=1,
+            inventory_path=base / "inventory/us-wi/statute/2026-05-10.json",
+            provisions_path=base / "provisions/us-wi/statute/2026-05-10.jsonl",
+            coverage_path=base / "coverage/us-wi/statute/2026-05-10.json",
+            coverage=ProvisionCoverageReport(
+                jurisdiction="us-wi",
+                document_class="statute",
+                version="2026-05-10",
+                source_count=1,
+                provision_count=1,
+                matched_count=1,
+                missing_from_provisions=(),
+                extra_provisions=(),
+            ),
+            source_paths=(base / "sources/us-wi/statute/2026-05-10/chapter.html",),
+        )
+
+    monkeypatch.setattr(cli, "extract_wisconsin_statutes", fake_wisconsin)
+
+    exit_code = main(
+        [
+            "extract-state-statutes",
+            "--base",
+            str(base),
+            "--manifest",
+            str(manifest),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["completed_count"] == 1
+    assert payload["provisions_written"] == 1
+
+
 def test_extract_state_statutes_batch_dry_run_checks_california_source_zip(tmp_path, capsys):
     source_zip = tmp_path / "pubinfo_2025.zip"
     source_zip.write_bytes(b"zip placeholder")

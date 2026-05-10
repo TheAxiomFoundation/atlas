@@ -264,6 +264,11 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-wi",
+      "version": "2026-05-10"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-wv",
       "version": "2026-05-08"
     },
