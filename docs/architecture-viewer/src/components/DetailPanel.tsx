@@ -18,32 +18,12 @@ export function DetailPanel({
   onSelectNode,
   onClose,
 }: {
-  node: NodeSpec | null;
+  node: NodeSpec;
   incoming: { node: NodeSpec; edge: EdgeSpec }[];
   outgoing: { node: NodeSpec; edge: EdgeSpec }[];
   onSelectNode: (id: string) => void;
   onClose: () => void;
 }) {
-  if (!node) {
-    return (
-      <aside className="detail-panel detail-panel--empty">
-        <div className="kicker">
-          <span className="kicker-mark">§</span> Reader
-        </div>
-        <h2 className="detail-panel__h">Click a component</h2>
-        <p>
-          The architecture is laid out left-to-right: external publishers, ingest layer,
-          storage, then read-only consumers. Click any block to see what it owns, which
-          repository it lives in, and which other pieces it depends on.
-        </p>
-        <p>
-          Switch between scenes on the left. The last scene groups components by the
-          repository that owns them.
-        </p>
-      </aside>
-    );
-  }
-
   const repo = REPO_INFO[node.repo];
 
   return (

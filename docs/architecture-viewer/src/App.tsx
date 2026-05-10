@@ -140,9 +140,10 @@ export function App() {
   }, []);
 
   const selectedNode = selectedId ? catalog.get(selectedId) ?? null : null;
+  const detailOpen = selectedNode !== null;
 
   return (
-    <div className="layout">
+    <div className={`layout ${detailOpen ? "layout--detail-open" : ""}`}>
       <SceneSwitcher
         layouts={LAYOUTS}
         activeId={activeLayoutId}
@@ -182,13 +183,15 @@ export function App() {
           </ReactFlow>
         </div>
       </main>
-      <DetailPanel
-        node={selectedNode}
-        incoming={neighbors?.incoming ?? []}
-        outgoing={neighbors?.outgoing ?? []}
-        onSelectNode={setSelectedId}
-        onClose={() => setSelectedId(null)}
-      />
+      {selectedNode && (
+        <DetailPanel
+          node={selectedNode}
+          incoming={neighbors?.incoming ?? []}
+          outgoing={neighbors?.outgoing ?? []}
+          onSelectNode={setSelectedId}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
     </div>
   );
 }

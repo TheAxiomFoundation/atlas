@@ -119,10 +119,15 @@ body::before {
 
 .layout {
   display: grid;
-  grid-template-columns: 300px 1fr 380px;
+  grid-template-columns: 300px 1fr;
   height: 100vh;
   position: relative;
   z-index: 1;
+  transition: grid-template-columns 240ms var(--ease-out);
+}
+
+.layout--detail-open {
+  grid-template-columns: 300px 1fr 380px;
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -465,10 +470,6 @@ body::before {
   position: relative;
 }
 
-.detail-panel--empty {
-  color: var(--color-ink-secondary);
-}
-
 .detail-panel__h {
   margin: 8px 0 6px 0;
   font-size: 18px;
@@ -477,12 +478,6 @@ body::before {
   letter-spacing: -0.015em;
   padding-right: 36px;
   line-height: 1.25;
-}
-
-.detail-panel--empty p {
-  font-size: 12.5px;
-  line-height: 1.6;
-  margin: 12px 0;
 }
 
 .detail-panel__summary {
