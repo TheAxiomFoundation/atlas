@@ -18,11 +18,11 @@ policy:
 status_counts:
   done: 42
   blocked_release_repair: 0
-  blocked_primary_source: 3
-  agent_ready: 6
+  blocked_primary_source: 4
+  agent_ready: 5
 recommended_first_batch:
-  - us-nh
   - us-nj
+  - us-ok
 states:
   - jurisdiction: us-ne
     name: Nebraska
@@ -370,11 +370,11 @@ states:
     notes: Source-first adapter and tests were drafted against the official Revisor site, but the Revisor blocked this public IP during extraction after returning anti-speed pages; retry only after access is cleared or an official bulk/source export is available.
   - jurisdiction: us-nh
     name: New Hampshire
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
+    queue_status: blocked_primary_source
+    production_status: blocked_primary_source
     supabase_count: 584
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first adapter and tests were drafted against the official General Court RSA HTML, but the site timed out after title TOC fetches during extraction from this public IP; retry with the polite single-worker adapter after access cools down or use an official bulk/source export.
   - jurisdiction: us-nj
     name: New Jersey
     queue_status: agent_ready
