@@ -37,6 +37,8 @@ from axiom_corpus.corpus.navigation_supabase import (
     fetch_provisions_for_navigation,
     write_navigation_nodes_to_supabase,
 )
+from axiom_corpus.corpus.ny_rulemaking import extract_ny_state_register
+from axiom_corpus.corpus.nycrr import extract_nycrr
 from axiom_corpus.corpus.r2 import (
     DEFAULT_ARTIFACT_PREFIXES,
     DEFAULT_RELEASE_ARTIFACT_PREFIXES,
@@ -2712,6 +2714,86 @@ def _cmd_extract_colorado_ccr(args: argparse.Namespace) -> int:
     return 0 if report.coverage.complete or args.allow_incomplete else 2
 
 
+def _cmd_extract_nycrr(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_nycrr(
+        store,
+        version=args.version,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        limit=args.limit,
+        delay_seconds=args.delay_seconds,
+        refresh=args.refresh,
+        progress_stream=sys.stderr,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": report.jurisdiction,
+                "document_class": report.document_class,
+                "version": args.version,
+                "page_count": report.page_count,
+                "browse_page_count": report.browse_page_count,
+                "document_page_count": report.document_page_count,
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _cmd_extract_ny_state_register(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_ny_state_register(
+        store,
+        version=args.version,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        limit=args.limit,
+        progress_stream=sys.stderr,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": report.jurisdiction,
+                "document_class": report.document_class,
+                "version": args.version,
+                "issue_count": report.issue_count,
+                "notice_count": report.notice_count,
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
 def _cmd_extract_official_documents(args: argparse.Namespace) -> int:
     store = CorpusArtifactStore(args.base)
     expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
@@ -3529,6 +3611,33 @@ def build_parser() -> argparse.ArgumentParser:
     extract_colorado_ccr_cmd.add_argument("--download-dir", type=Path)
     extract_colorado_ccr_cmd.add_argument("--allow-incomplete", action="store_true")
     extract_colorado_ccr_cmd.set_defaults(func=_cmd_extract_colorado_ccr)
+
+    extract_nycrr_cmd = sub.add_parser(
+        "extract-nycrr",
+        help="Snapshot the public New York Codes, Rules and Regulations tree.",
+    )
+    extract_nycrr_cmd.add_argument("--base", type=Path, required=True)
+    extract_nycrr_cmd.add_argument("--version", required=True)
+    extract_nycrr_cmd.add_argument("--only-title", type=int)
+    extract_nycrr_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_nycrr_cmd.add_argument("--expression-date")
+    extract_nycrr_cmd.add_argument("--limit", type=int)
+    extract_nycrr_cmd.add_argument("--delay-seconds", type=float, default=0.25)
+    extract_nycrr_cmd.add_argument("--refresh", action="store_true")
+    extract_nycrr_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_nycrr_cmd.set_defaults(func=_cmd_extract_nycrr)
+
+    extract_ny_state_register_cmd = sub.add_parser(
+        "extract-ny-state-register",
+        help="Snapshot NY Department of State Register issue PDFs.",
+    )
+    extract_ny_state_register_cmd.add_argument("--base", type=Path, required=True)
+    extract_ny_state_register_cmd.add_argument("--version", required=True)
+    extract_ny_state_register_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_ny_state_register_cmd.add_argument("--expression-date")
+    extract_ny_state_register_cmd.add_argument("--limit", type=int)
+    extract_ny_state_register_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_ny_state_register_cmd.set_defaults(func=_cmd_extract_ny_state_register)
 
     extract_documents_cmd = sub.add_parser(
         "extract-official-documents",
