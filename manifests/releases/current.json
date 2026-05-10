@@ -244,6 +244,11 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-ut",
+      "version": "2026-05-10"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-va",
       "version": "2026-04-29"
     },

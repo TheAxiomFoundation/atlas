@@ -1431,6 +1431,79 @@ sources:
     assert payload["rows"][0]["source_path_exists"] is True
 
 
+def test_extract_state_statutes_batch_passes_utah_options(tmp_path, capsys, monkeypatch):
+    import axiom_corpus.corpus.cli as cli
+
+    base = tmp_path / "corpus"
+    manifest = tmp_path / "state-statutes.yaml"
+    manifest.write_text(
+        """
+version: "2026-05-10"
+sources:
+  - source_id: us-ut-code
+    jurisdiction: us-ut
+    document_class: statute
+    adapter: utah-code
+    source_url: https://le.utah.gov/xcode/C_1800010118000101.html
+    version: "2026-05-10"
+    options:
+      source_as_of: "2026-05-10"
+      expression_date: "2026-05-10"
+      request_delay_seconds: 0.25
+      timeout_seconds: 60
+      request_attempts: 8
+      workers: 1
+"""
+    )
+
+    def fake_utah(*args, **kwargs):
+        assert kwargs["source_url"] == "https://le.utah.gov/xcode/C_1800010118000101.html"
+        assert kwargs["source_as_of"] == "2026-05-10"
+        assert kwargs["expression_date"] == "2026-05-10"
+        assert kwargs["request_delay_seconds"] == 0.25
+        assert kwargs["timeout_seconds"] == 60.0
+        assert kwargs["request_attempts"] == 8
+        assert kwargs["workers"] == 1
+        return StateStatuteExtractReport(
+            jurisdiction="us-ut",
+            title_count=1,
+            container_count=0,
+            section_count=1,
+            provisions_written=1,
+            inventory_path=base / "inventory/us-ut/statute/2026-05-10.json",
+            provisions_path=base / "provisions/us-ut/statute/2026-05-10.jsonl",
+            coverage_path=base / "coverage/us-ut/statute/2026-05-10.json",
+            coverage=ProvisionCoverageReport(
+                jurisdiction="us-ut",
+                document_class="statute",
+                version="2026-05-10",
+                source_count=1,
+                provision_count=1,
+                matched_count=1,
+                missing_from_provisions=(),
+                extra_provisions=(),
+            ),
+            source_paths=(base / "sources/us-ut/statute/2026-05-10/title.html",),
+        )
+
+    monkeypatch.setattr(cli, "extract_utah_code", fake_utah)
+
+    exit_code = main(
+        [
+            "extract-state-statutes",
+            "--base",
+            str(base),
+            "--manifest",
+            str(manifest),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["completed_count"] == 1
+    assert payload["provisions_written"] == 1
+
+
 def test_extract_state_statutes_batch_dry_run_checks_california_source_zip(tmp_path, capsys):
     source_zip = tmp_path / "pubinfo_2025.zip"
     source_zip.write_bytes(b"zip placeholder")

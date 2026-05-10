@@ -529,6 +529,24 @@ sources:
       source_authority: South Dakota Legislative Research Council
       source_scope_note: Current South Dakota Codified Laws from the official Legislature statutes API.
 
+  - source_id: us-ut-code
+    jurisdiction: us-ut
+    document_class: statute
+    adapter: utah-code
+    source_url: https://le.utah.gov/xcode/C_1800010118000101.html
+    version: "2026-05-10"
+    options:
+      source_as_of: "2026-05-10"
+      expression_date: "2026-05-10"
+      download_dir: ../data/corpus/downloads/us-ut-code/2026-05-10
+      request_delay_seconds: 0.25
+      timeout_seconds: 60
+      request_attempts: 8
+      workers: 1
+    metadata:
+      source_authority: Utah State Legislature
+      source_scope_note: Current Utah Code from official index HTML and per-section XML sources.
+
   - source_id: us-or-ors
     jurisdiction: us-or
     document_class: statute

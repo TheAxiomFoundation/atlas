@@ -120,6 +120,10 @@ from axiom_corpus.corpus.state_adapters.south_carolina import extract_south_caro
 from axiom_corpus.corpus.state_adapters.south_dakota import (
     extract_south_dakota_codified_laws,
 )
+from axiom_corpus.corpus.state_adapters.utah import (
+    UTAH_CODE_SOURCE_URL,
+    extract_utah_code,
+)
 from axiom_corpus.corpus.state_adapters.west_virginia import extract_west_virginia_code
 from axiom_corpus.corpus.state_statute_completion import (
     build_state_statute_completion_report,
@@ -2024,6 +2028,24 @@ def _extract_state_statute_source(
             timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
             request_attempts=_optional_int(options.get("request_attempts")) or 3,
         )
+    if adapter == "utah-code":
+        return extract_utah_code(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_url=_optional_text(options.get("source_url"))
+            or source.source_url
+            or UTAH_CODE_SOURCE_URL,
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.02,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            workers=_optional_int(options.get("workers")) or 8,
+        )
     if adapter == "montana-code":
         return extract_montana_code(
             store,
@@ -2429,6 +2451,11 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "south-dakota-codified-laws": "south-dakota-codified-laws",
         "south-dakota-statutes": "south-dakota-codified-laws",
         "sdcl": "south-dakota-codified-laws",
+        "ut": "utah-code",
+        "utah": "utah-code",
+        "utah-code": "utah-code",
+        "utah-code-xml": "utah-code",
+        "ut-code": "utah-code",
         "ny": "new-york-openleg-api",
         "new-york": "new-york-openleg-api",
         "new-york-openleg-api": "new-york-openleg-api",
@@ -2539,6 +2566,7 @@ def _state_statute_source_path_for_plan(
         "new-jersey-statutes",
         "oklahoma-statutes",
         "south-dakota-codified-laws",
+        "utah-code",
         "new-york-consolidated-laws",
         "new-york-openleg-api",
         "delaware-code",
