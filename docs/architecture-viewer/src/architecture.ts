@@ -378,7 +378,6 @@ const OVERVIEW_IDS = new Set([
   "adapters",
   "artifacts",
   "r2",
-  "supabase",
   "provisions",
   "navigation",
   "rules-us",
@@ -401,9 +400,9 @@ function byRepoLayout() {
     "axiom-foundation.org",
   ];
   const COLUMN_X = 60;
-  const COLUMN_GAP = 290;
-  const ROW_Y = 100;
-  const ROW_GAP = 130;
+  const COLUMN_GAP = 340;
+  const ROW_Y = 120;
+  const ROW_GAP = 150;
 
   const out: Array<{ id: string; x: number; y: number }> = [];
   ORDER.forEach((repoId, columnIndex) => {
@@ -428,25 +427,31 @@ export const LAYOUTS: Layout[] = [
       "Upstream publishers on the left, ingest in the middle, durable + serving " +
       "storage to the right, consumers at the far right.",
     nodes: [
-      N("ecfr", 40, 20),
-      N("usc", 40, 100),
-      N("state-sources", 40, 180),
-      N("canada-source", 40, 260),
-      N("irs-bulk", 40, 340),
-      N("fetchers", 340, 100),
-      N("parsers", 340, 200),
-      N("adapters", 340, 300),
-      N("artifacts", 640, 200),
-      N("r2", 940, 80),
-      N("supabase", 940, 320),
-      N("provisions", 1240, 220),
-      N("navigation", 1240, 360),
-      N("rules-us", 940, 520),
-      N("rules-state", 940, 600),
-      N("rules-other", 940, 680),
-      N("axiom-foundation", 1540, 200),
-      N("finbot", 1540, 340),
-      N("dashboard-builder", 1540, 480),
+      // Column 1: upstream sources — wider vertical spacing
+      N("ecfr", 40, 40),
+      N("usc", 40, 200),
+      N("state-sources", 40, 360),
+      N("canada-source", 40, 520),
+      N("irs-bulk", 40, 680),
+      // Column 2: ingest layer
+      N("fetchers", 460, 200),
+      N("parsers", 460, 380),
+      N("adapters", 460, 560),
+      // Column 3: artifact tree
+      N("artifacts", 880, 380),
+      // Column 4: storage stack (R2 cold, then live tables)
+      N("r2", 1300, 100),
+      N("provisions", 1300, 280),
+      N("navigation", 1300, 460),
+      // Column 4 (continued): rules below navigation — has_rulespec arrows
+      // travel straight up to navigation without crossing other edges
+      N("rules-us", 1300, 680),
+      N("rules-state", 1300, 820),
+      N("rules-other", 1300, 960),
+      // Column 5: consumers
+      N("axiom-foundation", 1720, 280),
+      N("finbot", 1720, 460),
+      N("dashboard-builder", 1720, 640),
     ],
     edges: edgesAmong(OVERVIEW_IDS),
   },
@@ -458,15 +463,15 @@ export const LAYOUTS: Layout[] = [
       "How a single upstream document becomes a row in corpus.provisions. " +
       "JSONL is the contract between adapter and loader.",
     nodes: [
-      N("ecfr", 60, 60),
-      N("canada-source", 60, 160),
-      N("state-sources", 60, 260),
-      N("fetchers", 360, 160),
-      N("parsers", 640, 160),
-      N("adapters", 920, 160),
-      N("artifacts", 1200, 160),
-      N("provisions", 1500, 60),
-      N("r2", 1500, 260),
+      N("ecfr", 60, 80),
+      N("canada-source", 60, 240),
+      N("state-sources", 60, 400),
+      N("fetchers", 460, 240),
+      N("parsers", 800, 240),
+      N("adapters", 1140, 240),
+      N("artifacts", 1480, 240),
+      N("provisions", 1820, 100),
+      N("r2", 1820, 380),
     ],
     edges: [
       { from: "ecfr", to: "fetchers", kind: "solid" },
@@ -487,14 +492,14 @@ export const LAYOUTS: Layout[] = [
       "Source of truth versus derived. Everything below corpus.provisions is " +
       "rebuildable in minutes.",
     nodes: [
-      N("artifacts", 80, 220),
-      N("r2", 380, 60),
-      N("provisions", 380, 260),
-      N("navigation", 680, 80),
-      N("counts", 680, 220),
-      N("references", 680, 360),
-      N("rules-us", 380, 500),
-      N("rules-state", 680, 500),
+      N("artifacts", 80, 320),
+      N("r2", 500, 100),
+      N("provisions", 500, 380),
+      N("navigation", 920, 100),
+      N("counts", 920, 280),
+      N("references", 920, 460),
+      N("rules-us", 500, 660),
+      N("rules-state", 920, 660),
     ],
     edges: [
       { from: "artifacts", to: "r2", kind: "solid", label: "sync-r2" },
@@ -515,17 +520,17 @@ export const LAYOUTS: Layout[] = [
       "apps never write to corpus; the encoder never writes provisions; rules-* " +
       "are observed, never authoritative for legal text.",
     nodes: [
-      N("state-sources", 60, 220),
-      N("adapters", 380, 220),
-      N("provisions", 700, 120),
-      N("navigation", 700, 320),
-      N("axiom-encode", 700, 520),
-      N("rules-us", 1020, 400),
-      N("rules-state", 1020, 520),
-      N("rules-other", 1020, 640),
-      N("axiom-foundation", 1340, 120),
-      N("finbot", 1340, 240),
-      N("dashboard-builder", 1340, 360),
+      N("state-sources", 60, 340),
+      N("adapters", 460, 340),
+      N("provisions", 860, 160),
+      N("navigation", 860, 380),
+      N("axiom-encode", 860, 700),
+      N("rules-us", 1260, 540),
+      N("rules-state", 1260, 700),
+      N("rules-other", 1260, 860),
+      N("axiom-foundation", 1660, 160),
+      N("finbot", 1660, 340),
+      N("dashboard-builder", 1660, 520),
     ],
     edges: [
       { from: "state-sources", to: "adapters", kind: "solid", label: "ingest" },
