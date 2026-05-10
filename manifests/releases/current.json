@@ -34,6 +34,21 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-al",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-ak",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-az",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-ca",
       "version": "2026-05-01"
     },
@@ -49,6 +64,11 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-ct",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-dc",
       "version": "2026-04-29"
     },
@@ -59,8 +79,18 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-fl",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-ga",
       "version": "2026-04-29"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-hi",
+      "version": "2026-05-09"
     },
     {
       "document_class": "statute",
@@ -74,8 +104,38 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-id",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-ia",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-ks",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-ky",
       "version": "2026-04-29"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-me",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-md",
+      "version": "2026-05-09"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-ma",
+      "version": "2026-05-09"
     },
     {
       "document_class": "statute",
@@ -96,6 +156,11 @@
       "document_class": "statute",
       "jurisdiction": "us-nv",
       "version": "2026-05-05"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-nm",
+      "version": "2026-05-09"
     },
     {
       "document_class": "statute",
@@ -129,8 +194,18 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-pa",
+      "version": "2026-05-08"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-ri",
       "version": "2026-05-06"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-sc",
+      "version": "2026-05-08"
     },
     {
       "document_class": "statute",
@@ -156,6 +231,11 @@
       "document_class": "statute",
       "jurisdiction": "us-wa",
       "version": "2026-05-04"
+    },
+    {
+      "document_class": "statute",
+      "jurisdiction": "us-wv",
+      "version": "2026-05-08"
     },
     {
       "document_class": "statute",

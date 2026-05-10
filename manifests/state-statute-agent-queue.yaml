@@ -1,4 +1,4 @@
-version: "2026-05-05"
+version: "2026-05-09"
 source_report: data/corpus/analytics/state-statute-completion-current.json
 document_class: statute
 policy:
@@ -16,13 +16,13 @@ policy:
     - State Options Reports
   publication_requires_controller: true
 status_counts:
-  done: 24
+  done: 40
   blocked_release_repair: 0
   blocked_primary_source: 2
-  agent_ready: 25
+  agent_ready: 9
 recommended_first_batch:
-  - us-nm
-  - us-pa
+  - us-la
+  - us-mi
 states:
   - jurisdiction: us-ne
     name: Nebraska
@@ -202,11 +202,12 @@ states:
     notes: Official Mississippi Code public access routes through Lexis; TOC is visible, but section text access triggers CAPTCHA/robot validation. Keep legacy Supabase rows until a primary bulk source, licensed feed, or manual source export is available.
   - jurisdiction: us-nm
     name: New Mexico
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 13181
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 37263
     priority: 2
-    notes: Discover current official primary source and build source-first adapter.
+    notes: Source-first New Mexico Statutes Annotated adapter is published and validated against official NMOneSource chapter ePubs.
   - jurisdiction: us-ny
     name: New York
     queue_status: done
@@ -217,11 +218,12 @@ states:
     notes: Source-first official OpenLegislation API adapter extracted 41,420 records across 94 titles with complete coverage from OpenLegislation JSON.
   - jurisdiction: us-pa
     name: Pennsylvania
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 13355
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-08"
+    provision_count: 15398
     priority: 2
-    notes: Discover current official primary source and build source-first adapter.
+    notes: Source-first Pennsylvania Consolidated Statutes adapter is published and validated against official PA General Assembly HTML.
   - jurisdiction: us-ri
     name: Rhode Island
     queue_status: done
@@ -232,82 +234,93 @@ states:
     notes: Source-first Rhode Island General Laws adapter is locally validated against the official General Laws HTML.
   - jurisdiction: us-sc
     name: South Carolina
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 30822
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-08"
+    provision_count: 32317
     priority: 2
-    notes: Discover current official primary source and build source-first adapter.
+    notes: Source-first South Carolina Code of Laws adapter is published and validated against official Legislative Services Agency HTML.
   - jurisdiction: us-wv
     name: West Virginia
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 4474
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-08"
+    provision_count: 33216
     priority: 2
-    notes: Discover current official primary source and build source-first adapter.
+    notes: Source-first West Virginia Code adapter is published and validated against official Legislature HTML and article JSON.
 
   - jurisdiction: us-al
     name: Alabama
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 110
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 57667
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first Alabama Code adapter is published and validated against the official Legislature HTML.
   - jurisdiction: us-ak
     name: Alaska
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 304
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 22930
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first Alaska Statutes adapter is published and validated against the official Legislature HTML.
   - jurisdiction: us-az
     name: Arizona
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 812
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 28283
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first Arizona Revised Statutes adapter is published and validated against official Arizona Legislature HTML.
   - jurisdiction: us-ct
     name: Connecticut
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 1784
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 31301
     priority: 3
-    notes: Legacy count may be partial; discover current official primary source and rebuild completely.
+    notes: Source-first Connecticut General Statutes adapter is published and validated against the official current statutes plus 2026 supplement.
   - jurisdiction: us-fl
     name: Florida
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 741
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 25816
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first Florida Statutes adapter is published and validated against the official Legislature XML zip.
   - jurisdiction: us-hi
     name: Hawaii
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 1467
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 20962
     priority: 3
-    notes: Legacy count may be partial; discover current official primary source and rebuild completely.
+    notes: Source-first Hawaii Revised Statutes adapter is published and validated against the official data.capitol.hawaii.gov current HRS HTML mirror.
   - jurisdiction: us-id
     name: Idaho
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 59
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 22255
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first Idaho Statutes adapter is published and validated against official Legislature HTML.
   - jurisdiction: us-ia
     name: Iowa
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 9787
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 36595
     priority: 3
-    notes: Discover current official primary source and build source-first adapter.
+    notes: Source-first Iowa Code adapter is published and validated against the official Legislature HTML.
   - jurisdiction: us-ks
     name: Kansas
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 423
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 49565
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first Kansas Statutes adapter is published and validated against official Kansas Office of Revisor of Statutes HTML.
   - jurisdiction: us-la
     name: Louisiana
     queue_status: agent_ready
@@ -317,25 +330,28 @@ states:
     notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
   - jurisdiction: us-me
     name: Maine
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 48
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 49159
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first Maine Revised Statutes adapter is published and validated against official Legislature HTML current through October 1, 2025.
   - jurisdiction: us-md
     name: Maryland
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 2017
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 40319
     priority: 3
-    notes: Legacy count may be partial; discover current official primary source and rebuild completely.
+    notes: Source-first Maryland Code adapter is published and validated against official Maryland General Assembly JSON and StatuteText HTML.
   - jurisdiction: us-ma
     name: Massachusetts
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 29
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-09"
+    provision_count: 26906
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first Massachusetts General Laws adapter is published and validated against official Massachusetts General Court HTML current through amendments passed before January 6, 2026.
   - jurisdiction: us-mi
     name: Michigan
     queue_status: agent_ready

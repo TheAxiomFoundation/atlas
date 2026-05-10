@@ -1,5 +1,114 @@
 version: "2026-04-29"
 sources:
+  - source_id: us-al-code
+    jurisdiction: us-al
+    document_class: statute
+    adapter: alabama-code
+    source_url: https://alison.legislature.state.al.us/code-of-alabama
+    version: "2026-05-09"
+    options:
+      source_as_of: "2026-05-09"
+      expression_date: "2026-05-09"
+      download_dir: ../data/corpus/downloads/us-al-code/2026-05-09
+      request_delay_seconds: 0.05
+      page_size: 1000
+    metadata:
+      source_authority: Alabama Legislature ALISON
+
+  - source_id: us-ak-statutes
+    jurisdiction: us-ak
+    document_class: statute
+    adapter: alaska-statutes
+    source_url: https://www.akleg.gov/basis/statutes.asp
+    version: "2026-05-09"
+    options:
+      source_year: 2024
+      source_as_of: "2026-05-09"
+      expression_date: "2026-05-09"
+      download_dir: ../data/corpus/downloads/us-ak-statutes/2026-05-09
+      request_delay_seconds: 0.05
+      timeout_seconds: 30
+      request_attempts: 3
+      workers: 4
+    metadata:
+      source_authority: Alaska State Legislature
+
+  - source_id: us-az-ars
+    jurisdiction: us-az
+    document_class: statute
+    adapter: arizona-revised-statutes
+    source_url: https://www.azleg.gov/arstitle/
+    version: "2026-05-09"
+    options:
+      source_as_of: "2026-05-09"
+      expression_date: "2026-05-09"
+      download_dir: ../data/corpus/downloads/us-az-ars/2026-05-09
+      request_delay_seconds: 0.1
+      timeout_seconds: 30
+      request_attempts: 3
+      workers: 4
+    metadata:
+      source_authority: Arizona Legislature
+
+  - source_id: us-ct-statutes
+    jurisdiction: us-ct
+    document_class: statute
+    adapter: connecticut-statutes
+    source_url: https://www.cga.ct.gov/current/pub/titles.htm
+    version: "2026-05-09"
+    options:
+      source_as_of: "2026-01-01"
+      expression_date: "2026-01-01"
+      download_dir: ../data/corpus/downloads/us-ct-statutes/2026-05-09
+      current_base_url: https://www.cga.ct.gov/current/pub/
+      supplement_base_url: https://www.cga.ct.gov/2026/sup/
+      include_supplement: true
+      request_delay_seconds: 0.02
+      timeout_seconds: 60
+      request_attempts: 3
+      verify_ssl: false
+    metadata:
+      source_authority: Connecticut General Assembly
+      source_scope_note: General Statutes revised to January 1, 2025, with 2026 Supplement revised to January 1, 2026.
+
+  - source_id: us-fl-statutes
+    jurisdiction: us-fl
+    document_class: statute
+    adapter: florida-statutes
+    source_url: https://www.leg.state.fl.us/statutes/
+    version: "2026-05-09"
+    options:
+      source_year: 2025
+      source_as_of: "2025-09-19"
+      expression_date: "2025-09-19"
+      download_dir: ../data/corpus/downloads/us-fl-statutes/2026-05-09
+      source_zip: ../data/statutes/us-fl/FLLawDL2025.zip
+      source_zip_url: https://www.leg.state.fl.us/Statutes/FLLawDL2025.zip
+      request_delay_seconds: 0.03
+      timeout_seconds: 60
+      request_attempts: 3
+    metadata:
+      source_authority: Florida Legislature
+
+  - source_id: us-hi-hrs
+    jurisdiction: us-hi
+    document_class: statute
+    adapter: hawaii-revised-statutes
+    source_url: https://data.capitol.hawaii.gov/hrscurrent/
+    version: "2026-05-09"
+    options:
+      source_as_of: "2026-05-09"
+      expression_date: "2026-05-09"
+      download_dir: ../data/corpus/downloads/us-hi-hrs/2026-05-09
+      base_url: https://data.capitol.hawaii.gov/hrscurrent/
+      request_delay_seconds: 0.01
+      timeout_seconds: 60
+      request_attempts: 3
+      workers: 16
+    metadata:
+      source_authority: Hawaii State Legislature
+      source_scope_note: Current HRS chapter directories from the official data.capitol.hawaii.gov mirror.
+
   - source_id: us-ca-codes
     jurisdiction: us-ca
     document_class: statute
@@ -88,6 +197,117 @@ sources:
     metadata:
       source_authority: Indiana General Assembly
 
+  - source_id: us-ia-code
+    jurisdiction: us-ia
+    document_class: statute
+    adapter: iowa-code
+    source_url: https://www.legis.iowa.gov/law/iowaCode?year=2026
+    version: "2026-05-09"
+    options:
+      source_year: 2026
+      source_as_of: "2026-05-09"
+      expression_date: "2026-05-09"
+      download_dir: ../data/corpus/downloads/us-ia-code/2026-05-09
+      request_delay_seconds: 0.02
+      timeout_seconds: 20
+      request_attempts: 2
+      workers: 8
+    metadata:
+      source_authority: Iowa Legislative Services Agency
+
+  - source_id: us-id-statutes
+    jurisdiction: us-id
+    document_class: statute
+    adapter: idaho-statutes
+    source_url: https://legislature.idaho.gov/statutesrules/idstat/
+    version: "2026-05-09"
+    options:
+      source_as_of: "2025-07-01"
+      expression_date: "2025-07-01"
+      download_dir: ../data/corpus/downloads/us-id-statutes/2026-05-09
+      request_delay_seconds: 0.2
+      timeout_seconds: 30
+      request_attempts: 10
+      workers: 1
+    metadata:
+      source_authority: Idaho State Legislature
+      source_scope_note: Current through the 2025 Legislative Session.
+
+  - source_id: us-ks-statutes
+    jurisdiction: us-ks
+    document_class: statute
+    adapter: kansas-statutes
+    source_url: https://ksrevisor.gov/ksa.html
+    version: "2026-05-09"
+    options:
+      source_as_of: "2026-05-09"
+      expression_date: "2026-05-09"
+      download_dir: ../data/corpus/downloads/us-ks-statutes/2026-05-09
+      base_url: https://ksrevisor.gov/
+      request_delay_seconds: 0.01
+      timeout_seconds: 60
+      request_attempts: 3
+      workers: 24
+    metadata:
+      source_authority: Kansas Office of Revisor of Statutes
+      source_scope_note: Current Kansas Statutes HTML from the official Revisor site; page notes amendments and new laws enacted during the 2025 legislative session.
+
+  - source_id: us-me-statutes
+    jurisdiction: us-me
+    document_class: statute
+    adapter: maine-revised-statutes
+    source_url: https://legislature.maine.gov/statutes/
+    version: "2026-05-09"
+    options:
+      source_as_of: "2025-10-01"
+      expression_date: "2025-10-01"
+      download_dir: ../data/corpus/downloads/us-me-statutes/2026-05-09
+      request_delay_seconds: 0.02
+      timeout_seconds: 60
+      request_attempts: 3
+      workers: 8
+    metadata:
+      source_authority: Maine Legislature Office of the Revisor of Statutes
+      source_scope_note: Current through October 1, 2025 after the First Special Session of the 132nd Maine Legislature.
+
+  - source_id: us-md-code
+    jurisdiction: us-md
+    document_class: statute
+    adapter: maryland-code
+    source_url: https://mgaleg.maryland.gov/mgawebsite/Laws/Statutes
+    version: "2026-05-09"
+    options:
+      source_as_of: "2026-01-01"
+      expression_date: "2026-01-01"
+      download_dir: ../data/corpus/downloads/us-md-code/2026-05-09
+      enactments: false
+      include_constitution: false
+      request_delay_seconds: 0.02
+      timeout_seconds: 60
+      request_attempts: 3
+      workers: 8
+    metadata:
+      source_authority: Maryland General Assembly
+      source_scope_note: Maryland Code statutes with enactments disabled, corresponding to statutes in effect as of January 1, 2026.
+
+  - source_id: us-ma-general-laws
+    jurisdiction: us-ma
+    document_class: statute
+    adapter: massachusetts-general-laws
+    source_url: https://malegislature.gov/Laws/GeneralLaws
+    version: "2026-05-09"
+    options:
+      source_as_of: "2026-01-06"
+      expression_date: "2026-01-06"
+      download_dir: ../data/corpus/downloads/us-ma-general-laws/2026-05-09
+      request_delay_seconds: 0.02
+      timeout_seconds: 60
+      request_attempts: 3
+      workers: 8
+    metadata:
+      source_authority: Massachusetts General Court
+      source_scope_note: Legislature site says General Laws include amendments passed before January 6, 2026; the site labels this an unofficial online version of the official edition.
+
   - source_id: us-ky-krs
     jurisdiction: us-ky
     document_class: statute
@@ -153,6 +373,20 @@ sources:
     metadata:
       source_authority: Nevada Legislature
 
+  - source_id: us-nm-statutes
+    jurisdiction: us-nm
+    document_class: statute
+    adapter: new-mexico-statutes
+    source_url: https://nmonesource.com/nmos/nmsa/en/nav_date.do
+    version: "2026-05-09"
+    options:
+      source_as_of: "2026-05-09"
+      expression_date: "2026-05-09"
+      download_dir: ../data/corpus/downloads/us-nm-statutes/2026-05-09
+      request_delay_seconds: 0.1
+    metadata:
+      source_authority: New Mexico Compilation Commission
+
   - source_id: us-ny-openleg-api
     jurisdiction: us-ny
     document_class: statute
@@ -216,6 +450,49 @@ sources:
       workers: 8
     metadata:
       source_authority: Oregon State Legislature
+
+  - source_id: us-pa-consolidated-statutes
+    jurisdiction: us-pa
+    document_class: statute
+    adapter: pennsylvania-statutes
+    source_url: https://www.palegis.us/statutes/consolidated/
+    version: "2026-05-08"
+    options:
+      source_as_of: "2026-05-08"
+      expression_date: "2026-05-08"
+      download_dir: ../data/corpus/downloads/us-pa/2026-05-08
+      request_delay_seconds: 0.2
+    metadata:
+      source_authority: Pennsylvania General Assembly
+
+  - source_id: us-sc-code
+    jurisdiction: us-sc
+    document_class: statute
+    adapter: south-carolina-code
+    source_url: https://www.scstatehouse.gov/code/statmast.php
+    version: "2026-05-08"
+    options:
+      source_as_of: "2026-05-08"
+      expression_date: "2026-05-08"
+      download_dir: ../data/corpus/downloads/us-sc-code/2026-05-08
+      request_delay_seconds: 0.15
+    metadata:
+      source_authority: South Carolina Legislative Services Agency
+
+  - source_id: us-wv-code
+    jurisdiction: us-wv
+    document_class: statute
+    adapter: west-virginia-code
+    source_url: https://code.wvlegislature.gov/wvcodeentire.htm
+    version: "2026-05-08"
+    options:
+      source_as_of: "2026-05-08"
+      expression_date: "2026-05-08"
+      download_dir: ../data/corpus/downloads/us-wv-code/2026-05-08
+      request_delay_seconds: 0.05
+      workers: 8
+    metadata:
+      source_authority: West Virginia Legislature
 
   - source_id: us-ri-general-laws
     jurisdiction: us-ri

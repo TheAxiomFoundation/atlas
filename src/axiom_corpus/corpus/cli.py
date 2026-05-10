@@ -53,11 +53,34 @@ from axiom_corpus.corpus.rulespec_paths import (
     discover_encoded_paths,
     discover_encoded_paths_for_jurisdictions,
 )
+from axiom_corpus.corpus.state_adapters.alabama import extract_alabama_code
+from axiom_corpus.corpus.state_adapters.alaska import (
+    ALASKA_STATUTES_DEFAULT_YEAR,
+    extract_alaska_statutes,
+)
+from axiom_corpus.corpus.state_adapters.arizona import extract_arizona_revised_statutes
+from axiom_corpus.corpus.state_adapters.connecticut import extract_connecticut_statutes
 from axiom_corpus.corpus.state_adapters.delaware import extract_delaware_code
+from axiom_corpus.corpus.state_adapters.florida import (
+    FLORIDA_STATUTES_DEFAULT_YEAR,
+    extract_florida_statutes,
+)
+from axiom_corpus.corpus.state_adapters.hawaii import extract_hawaii_revised_statutes
+from axiom_corpus.corpus.state_adapters.idaho import extract_idaho_statutes
 from axiom_corpus.corpus.state_adapters.illinois import extract_illinois_ilcs
 from axiom_corpus.corpus.state_adapters.indiana import (
     INDIANA_CODE_DEFAULT_YEAR,
     extract_indiana_code,
+)
+from axiom_corpus.corpus.state_adapters.iowa import (
+    IOWA_CODE_DEFAULT_YEAR,
+    extract_iowa_code,
+)
+from axiom_corpus.corpus.state_adapters.kansas import extract_kansas_statutes
+from axiom_corpus.corpus.state_adapters.maine import extract_maine_revised_statutes
+from axiom_corpus.corpus.state_adapters.maryland import extract_maryland_code
+from axiom_corpus.corpus.state_adapters.massachusetts import (
+    extract_massachusetts_general_laws,
 )
 from axiom_corpus.corpus.state_adapters.montana import (
     MONTANA_CODE_DEFAULT_YEAR,
@@ -67,6 +90,7 @@ from axiom_corpus.corpus.state_adapters.nevada import (
     NEVADA_NRS_DEFAULT_YEAR,
     extract_nevada_nrs,
 )
+from axiom_corpus.corpus.state_adapters.new_mexico import extract_new_mexico_statutes
 from axiom_corpus.corpus.state_adapters.new_york import (
     extract_new_york_consolidated_laws,
     extract_new_york_openleg_api,
@@ -75,10 +99,13 @@ from axiom_corpus.corpus.state_adapters.oregon import (
     OREGON_ORS_DEFAULT_YEAR,
     extract_oregon_ors,
 )
+from axiom_corpus.corpus.state_adapters.pennsylvania import extract_pennsylvania_statutes
 from axiom_corpus.corpus.state_adapters.rhode_island import (
     RHODE_ISLAND_GENERAL_LAWS_DEFAULT_YEAR,
     extract_rhode_island_general_laws,
 )
+from axiom_corpus.corpus.state_adapters.south_carolina import extract_south_carolina_code
+from axiom_corpus.corpus.state_adapters.west_virginia import extract_west_virginia_code
 from axiom_corpus.corpus.state_statute_completion import (
     build_state_statute_completion_report,
 )
@@ -1511,6 +1538,133 @@ def _extract_state_statute_source(
     expression_date = _optional_text(options.get("expression_date"))
     only_title = _optional_text(options.get("only_title"))
     limit = limit_override if limit_override is not None else _optional_int(options.get("limit"))
+    if adapter == "alabama-code":
+        return extract_alabama_code(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            graphql_url=_optional_text(options.get("graphql_url"))
+            or "https://alison.legislature.state.al.us/graphql",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.05,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 90.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            page_size=_optional_int(options.get("page_size")) or 1000,
+        )
+    if adapter == "alaska-statutes":
+        return extract_alaska_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_year=_optional_int(options.get("source_year"))
+            or ALASKA_STATUTES_DEFAULT_YEAR,
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url"))
+            or "https://www.akleg.gov/basis/statutes.asp",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.05,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 30.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            workers=_optional_int(options.get("workers")) or 1,
+        )
+    if adapter == "arizona-revised-statutes":
+        return extract_arizona_revised_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url")) or "https://www.azleg.gov",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.03,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 30.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            workers=_optional_int(options.get("workers")) or 8,
+        )
+    if adapter == "connecticut-statutes":
+        return extract_connecticut_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            only_chapter=_optional_text(options.get("only_chapter")),
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            current_base_url=_optional_text(options.get("current_base_url"))
+            or "https://www.cga.ct.gov/current/pub/",
+            supplement_base_url=_optional_text(options.get("supplement_base_url"))
+            or "https://www.cga.ct.gov/2026/sup/",
+            include_supplement=_optional_bool(options.get("include_supplement"), default=True),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.05,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            verify_ssl=_optional_bool(options.get("verify_ssl"), default=True),
+        )
+    if adapter == "florida-statutes":
+        return extract_florida_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_year=_optional_int(options.get("source_year"))
+            or FLORIDA_STATUTES_DEFAULT_YEAR,
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            source_zip=_optional_manifest_path(manifest_path, options, "source_zip"),
+            source_zip_url=_optional_text(options.get("source_zip_url")),
+            base_url=_optional_text(options.get("base_url"))
+            or "https://www.leg.state.fl.us/statutes/",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.05,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
+    if adapter == "hawaii-revised-statutes":
+        return extract_hawaii_revised_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            only_chapter=_optional_text(options.get("only_chapter")),
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url"))
+            or "https://data.capitol.hawaii.gov/hrscurrent/",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.02,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            workers=_optional_int(options.get("workers")) or 8,
+        )
+    if adapter == "kansas-statutes":
+        return extract_kansas_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url")) or "https://ksrevisor.gov/",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.03,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            workers=_optional_int(options.get("workers")) or 8,
+        )
     if adapter == "dc-code":
         return extract_dc_code(
             store,
@@ -1647,6 +1801,96 @@ def _extract_state_statute_source(
             limit=limit,
             download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
         )
+    if adapter == "iowa-code":
+        return extract_iowa_code(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_year=_optional_int(options.get("source_year")) or IOWA_CODE_DEFAULT_YEAR,
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            only_chapter=_optional_text(options.get("only_chapter")),
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.05,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            workers=_optional_int(options.get("workers")) or 1,
+        )
+    if adapter == "idaho-statutes":
+        return extract_idaho_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            only_chapter=_optional_text(options.get("only_chapter")),
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url"))
+            or "https://legislature.idaho.gov/statutesrules/idstat/",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.05,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+            workers=_optional_int(options.get("workers")) or 1,
+        )
+    if adapter == "maine-revised-statutes":
+        return extract_maine_revised_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            only_chapter=_optional_text(options.get("only_chapter")),
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 8,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url"))
+            or "https://legislature.maine.gov/statutes/",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.02,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
+    if adapter == "maryland-code":
+        return extract_maryland_code(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_article=_optional_text(options.get("only_article")) or only_title,
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 8,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url"))
+            or "https://mgaleg.maryland.gov/mgawebsite",
+            include_constitution=_optional_bool(options.get("include_constitution"), default=False),
+            enactments=_optional_bool(options.get("enactments"), default=False),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.02,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
+    if adapter == "massachusetts-general-laws":
+        return extract_massachusetts_general_laws(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_part=_optional_text(options.get("only_part")),
+            only_title=only_title,
+            only_chapter=_optional_text(options.get("only_chapter")),
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 8,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url")) or "https://malegislature.gov",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.02,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
     if adapter == "montana-code":
         return extract_montana_code(
             store,
@@ -1730,6 +1974,65 @@ def _extract_state_statute_source(
             limit=limit,
             workers=_optional_int(options.get("workers")) or 8,
             download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+        )
+    if adapter == "pennsylvania-statutes":
+        return extract_pennsylvania_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.2,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 120.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
+    if adapter == "south-carolina-code":
+        return extract_south_carolina_code(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            only_chapter=_optional_text(options.get("only_chapter")),
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.15,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 90.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
+    if adapter == "west-virginia-code":
+        return extract_west_virginia_code(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_chapter=_optional_text(options.get("only_chapter")) or only_title,
+            only_article=_optional_text(options.get("only_article")),
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 1,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.05,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 90.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
+    if adapter == "new-mexico-statutes":
+        return extract_new_mexico_statutes(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            limit=limit,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.1,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 90.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
         )
     if adapter == "rhode-island-general-laws":
         return extract_rhode_island_general_laws(
@@ -1862,6 +2165,39 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "state-html-directory": "local-state-html",
         "local-state-html": "local-state-html",
         "legacy-state-html": "local-state-html",
+        "al": "alabama-code",
+        "alabama": "alabama-code",
+        "alabama-code": "alabama-code",
+        "alabama-code-graphql": "alabama-code",
+        "ak": "alaska-statutes",
+        "alaska": "alaska-statutes",
+        "alaska-statutes": "alaska-statutes",
+        "alaska-statutes-html": "alaska-statutes",
+        "az": "arizona-revised-statutes",
+        "arizona": "arizona-revised-statutes",
+        "arizona-revised-statutes": "arizona-revised-statutes",
+        "arizona-ars": "arizona-revised-statutes",
+        "ars": "arizona-revised-statutes",
+        "ct": "connecticut-statutes",
+        "connecticut": "connecticut-statutes",
+        "connecticut-statutes": "connecticut-statutes",
+        "connecticut-general-statutes": "connecticut-statutes",
+        "cga-ct": "connecticut-statutes",
+        "fl": "florida-statutes",
+        "florida": "florida-statutes",
+        "florida-statutes": "florida-statutes",
+        "florida-statutes-html": "florida-statutes",
+        "hi": "hawaii-revised-statutes",
+        "hawaii": "hawaii-revised-statutes",
+        "hawaii-revised-statutes": "hawaii-revised-statutes",
+        "hawaii-hrs": "hawaii-revised-statutes",
+        "hrs": "hawaii-revised-statutes",
+        "ks": "kansas-statutes",
+        "kansas": "kansas-statutes",
+        "kansas-statutes": "kansas-statutes",
+        "kansas-statutes-html": "kansas-statutes",
+        "kansas-ksa": "kansas-statutes",
+        "ksa": "kansas-statutes",
         "colorado-docx": "colorado-docx",
         "colorado-crs-docx": "colorado-docx",
         "ohio": "ohio-revised-code",
@@ -1886,6 +2222,34 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "indiana": "indiana-code",
         "indiana-code": "indiana-code",
         "indiana-code-html": "indiana-code",
+        "ia": "iowa-code",
+        "iowa": "iowa-code",
+        "iowa-code": "iowa-code",
+        "iowa-code-html": "iowa-code",
+        "id": "idaho-statutes",
+        "idaho": "idaho-statutes",
+        "idaho-statutes": "idaho-statutes",
+        "idaho-code": "idaho-statutes",
+        "idaho-statutes-html": "idaho-statutes",
+        "me": "maine-revised-statutes",
+        "maine": "maine-revised-statutes",
+        "maine-revised-statutes": "maine-revised-statutes",
+        "maine-statutes": "maine-revised-statutes",
+        "mrs": "maine-revised-statutes",
+        "maine-revised-statutes-html": "maine-revised-statutes",
+        "md": "maryland-code",
+        "maryland": "maryland-code",
+        "maryland-code": "maryland-code",
+        "maryland-statutes": "maryland-code",
+        "maryland-code-html": "maryland-code",
+        "maryland-mga": "maryland-code",
+        "ma": "massachusetts-general-laws",
+        "massachusetts": "massachusetts-general-laws",
+        "massachusetts-general-laws": "massachusetts-general-laws",
+        "massachusetts-statutes": "massachusetts-general-laws",
+        "mass-general-laws": "massachusetts-general-laws",
+        "massachusetts-general-laws-html": "massachusetts-general-laws",
+        "mgl": "massachusetts-general-laws",
         "mt": "montana-code",
         "montana": "montana-code",
         "montana-code": "montana-code",
@@ -1913,6 +2277,29 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "oregon-ors": "oregon-ors",
         "oregon-ors-html": "oregon-ors",
         "ors": "oregon-ors",
+        "pa": "pennsylvania-statutes",
+        "pennsylvania": "pennsylvania-statutes",
+        "pennsylvania-statutes": "pennsylvania-statutes",
+        "pennsylvania-consolidated-statutes": "pennsylvania-statutes",
+        "pennsylvania-consolidated-statutes-html": "pennsylvania-statutes",
+        "pacode": "pennsylvania-statutes",
+        "pa-consolidated-statutes": "pennsylvania-statutes",
+        "sc": "south-carolina-code",
+        "south-carolina": "south-carolina-code",
+        "south-carolina-code": "south-carolina-code",
+        "south-carolina-code-html": "south-carolina-code",
+        "sc-code": "south-carolina-code",
+        "wv": "west-virginia-code",
+        "west-virginia": "west-virginia-code",
+        "west-virginia-code": "west-virginia-code",
+        "west-virginia-code-html": "west-virginia-code",
+        "wv-code": "west-virginia-code",
+        "nm": "new-mexico-statutes",
+        "new-mexico": "new-mexico-statutes",
+        "new-mexico-statutes": "new-mexico-statutes",
+        "new-mexico-nmsa": "new-mexico-statutes",
+        "nmone": "new-mexico-statutes",
+        "nmonesource": "new-mexico-statutes",
         "ri": "rhode-island-general-laws",
         "rhode-island": "rhode-island-general-laws",
         "rhode-island-general-laws": "rhode-island-general-laws",
@@ -1955,6 +2342,13 @@ def _state_statute_source_path_for_plan(
     path_key: str,
 ) -> Path | None:
     if adapter in {
+        "alabama-code",
+        "alaska-statutes",
+        "arizona-revised-statutes",
+        "connecticut-statutes",
+        "florida-statutes",
+        "hawaii-revised-statutes",
+        "kansas-statutes",
         "minnesota-statutes",
         "nebraska-revised-statutes",
         "ohio-revised-code",
@@ -1962,12 +2356,21 @@ def _state_statute_source_path_for_plan(
         "washington-rcw",
         "illinois-ilcs",
         "indiana-code",
+        "iowa-code",
+        "idaho-statutes",
+        "maine-revised-statutes",
+        "maryland-code",
+        "massachusetts-general-laws",
         "montana-code",
         "nevada-nrs",
         "new-york-consolidated-laws",
         "new-york-openleg-api",
         "delaware-code",
         "oregon-ors",
+        "pennsylvania-statutes",
+        "south-carolina-code",
+        "west-virginia-code",
+        "new-mexico-statutes",
         "rhode-island-general-laws",
     }:
         return _optional_manifest_path(manifest_path, options, "source_dir") or (
@@ -2012,6 +2415,19 @@ def _optional_float(value: Any) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _optional_bool(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"invalid boolean value: {value!r}")
 
 
 def _cmd_extract_colorado_ccr(args: argparse.Namespace) -> int:
