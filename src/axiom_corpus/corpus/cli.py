@@ -117,6 +117,9 @@ from axiom_corpus.corpus.state_adapters.rhode_island import (
     extract_rhode_island_general_laws,
 )
 from axiom_corpus.corpus.state_adapters.south_carolina import extract_south_carolina_code
+from axiom_corpus.corpus.state_adapters.south_dakota import (
+    extract_south_dakota_codified_laws,
+)
 from axiom_corpus.corpus.state_adapters.west_virginia import extract_west_virginia_code
 from axiom_corpus.corpus.state_statute_completion import (
     build_state_statute_completion_report,
@@ -2004,6 +2007,23 @@ def _extract_state_statute_source(
             timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
             request_attempts=_optional_int(options.get("request_attempts")) or 3,
         )
+    if adapter == "south-dakota-codified-laws":
+        return extract_south_dakota_codified_laws(
+            store,
+            version=version,
+            source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
+            source_as_of=source_as_of,
+            expression_date=expression_date,
+            only_title=only_title,
+            only_chapter=_optional_text(options.get("only_chapter")),
+            limit=limit,
+            workers=_optional_int(options.get("workers")) or 8,
+            download_dir=_optional_manifest_path(manifest_path, options, "download_dir"),
+            base_url=_optional_text(options.get("base_url")) or "https://sdlegislature.gov",
+            request_delay_seconds=_optional_float(options.get("request_delay_seconds")) or 0.02,
+            timeout_seconds=_optional_float(options.get("timeout_seconds")) or 60.0,
+            request_attempts=_optional_int(options.get("request_attempts")) or 3,
+        )
     if adapter == "montana-code":
         return extract_montana_code(
             store,
@@ -2404,6 +2424,11 @@ def _canonical_state_statute_adapter(adapter: str) -> str:
         "oklahoma": "oklahoma-statutes",
         "oklahoma-statutes": "oklahoma-statutes",
         "ok-statutes": "oklahoma-statutes",
+        "sd": "south-dakota-codified-laws",
+        "south-dakota": "south-dakota-codified-laws",
+        "south-dakota-codified-laws": "south-dakota-codified-laws",
+        "south-dakota-statutes": "south-dakota-codified-laws",
+        "sdcl": "south-dakota-codified-laws",
         "ny": "new-york-openleg-api",
         "new-york": "new-york-openleg-api",
         "new-york-openleg-api": "new-york-openleg-api",
@@ -2513,6 +2538,7 @@ def _state_statute_source_path_for_plan(
         "new-hampshire-rsa",
         "new-jersey-statutes",
         "oklahoma-statutes",
+        "south-dakota-codified-laws",
         "new-york-consolidated-laws",
         "new-york-openleg-api",
         "delaware-code",

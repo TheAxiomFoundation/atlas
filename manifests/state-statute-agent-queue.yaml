@@ -16,13 +16,13 @@ policy:
     - State Options Reports
   publication_requires_controller: true
 status_counts:
-  done: 44
+  done: 45
   blocked_release_repair: 0
   blocked_primary_source: 4
-  agent_ready: 3
+  agent_ready: 2
 recommended_first_batch:
-  - us-sd
   - us-ut
+  - us-wi
 states:
   - jurisdiction: us-ne
     name: Nebraska
@@ -393,11 +393,12 @@ states:
     notes: Source-first Oklahoma Statutes adapter is published and validated against the official Legislature CompleteTitles RTF files.
   - jurisdiction: us-sd
     name: South Dakota
-    queue_status: agent_ready
-    production_status: supabase_only_legacy
-    supabase_count: 2
+    queue_status: done
+    production_status: productionized_and_validated
+    version: "2026-05-10"
+    provision_count: 44817
     priority: 3
-    notes: Legacy count is likely partial; discover current official primary source and rebuild completely.
+    notes: Source-first South Dakota Codified Laws adapter is published and validated against the official Legislature statutes API.
   - jurisdiction: us-ut
     name: Utah
     queue_status: agent_ready

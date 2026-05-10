@@ -510,6 +510,25 @@ sources:
       source_authority: Oklahoma Legislature
       source_scope_note: Current Oklahoma Statutes title RTF files from the official Legislature CompleteTitles directory.
 
+  - source_id: us-sd-codified-laws
+    jurisdiction: us-sd
+    document_class: statute
+    adapter: south-dakota-codified-laws
+    source_url: https://sdlegislature.gov/Statutes
+    version: "2026-05-10"
+    options:
+      source_as_of: "2026-05-10"
+      expression_date: "2026-04-16"
+      download_dir: ../data/corpus/downloads/us-sd-codified-laws/2026-05-10
+      base_url: https://sdlegislature.gov
+      request_delay_seconds: 0.25
+      timeout_seconds: 60
+      request_attempts: 6
+      workers: 1
+    metadata:
+      source_authority: South Dakota Legislative Research Council
+      source_scope_note: Current South Dakota Codified Laws from the official Legislature statutes API.
+
   - source_id: us-or-ors
     jurisdiction: us-or
     document_class: statute

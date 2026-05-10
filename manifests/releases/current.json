@@ -209,6 +209,11 @@
     },
     {
       "document_class": "statute",
+      "jurisdiction": "us-sd",
+      "version": "2026-05-10"
+    },
+    {
+      "document_class": "statute",
       "jurisdiction": "us-or",
       "version": "2026-05-06"
     },
