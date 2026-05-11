@@ -1,0 +1,17 @@
+documents:
+  - source_id: tx-hhs-texas-works-a-2410
+    jurisdiction: us-tx
+    document_class: manual
+    citation_path: us-tx/manual/hhs/texas-works/a-2410-general-policy
+    title: Texas Works Handbook A-2410 General Policy
+    source_url: https://www.hhs.texas.gov/handbooks/texas-works-handbook/a-2410-general-policy
+    source_format: html
+    source_as_of: "2026-05-11"
+    expression_date: "2026-05-11"
+    metadata:
+      primary_source: true
+      source_authority: Texas Health and Human Services
+      document_subtype: handbook_section
+      program: texas_works
+      topic: eligibility_general_policy
+      discovered_via: policyengine-us:state_references

@@ -58,6 +58,11 @@
       "version": "2026-05-01"
     },
     {
+      "document_class": "guidance",
+      "jurisdiction": "us-ca",
+      "version": "2026-05-11-cdss-acl-2024"
+    },
+    {
       "document_class": "regulation",
       "jurisdiction": "us-co",
       "version": "2026-04-29"
@@ -76,6 +81,11 @@
       "document_class": "statute",
       "jurisdiction": "us-dc",
       "version": "2026-04-29"
+    },
+    {
+      "document_class": "manual",
+      "jurisdiction": "us-dc",
+      "version": "2026-05-11-child-care-subsidy-manual"
     },
     {
       "document_class": "statute",
@@ -121,6 +131,11 @@
       "document_class": "statute",
       "jurisdiction": "us-ks",
       "version": "2026-05-09"
+    },
+    {
+      "document_class": "guidance",
+      "jurisdiction": "us-ks",
+      "version": "2026-05-11-revenue-notices-2024"
     },
     {
       "document_class": "statute",
@@ -246,6 +261,11 @@
       "document_class": "statute",
       "jurisdiction": "us-tx",
       "version": "2026-05-01"
+    },
+    {
+      "document_class": "manual",
+      "jurisdiction": "us-tx",
+      "version": "2026-05-11-texas-works-a-2410"
     },
     {
       "document_class": "statute",

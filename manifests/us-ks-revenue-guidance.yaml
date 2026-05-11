@@ -1,0 +1,34 @@
+documents:
+  - source_id: ks-revenue-notice-24-08
+    jurisdiction: us-ks
+    document_class: guidance
+    citation_path: us-ks/guidance/revenue/notice-24-08
+    title: Notice 24-08 Changes to Individual Income Tax
+    source_url: https://ksrevenue.gov/taxnotices/notice24-08.pdf
+    source_format: pdf
+    source_as_of: "2024-07-01"
+    expression_date: "2024-07-01"
+    metadata:
+      primary_source: true
+      source_authority: Kansas Department of Revenue
+      document_subtype: tax_notice
+      document_number: Notice 24-08
+      program: individual_income_tax
+      discovered_via: policyengine-us:state_references
+  - source_id: ks-revenue-notice-24-09
+    jurisdiction: us-ks
+    document_class: guidance
+    citation_path: us-ks/guidance/revenue/notice-24-09
+    title: Notice 24-09 Child and Dependent Care Expenses Credit
+    source_url: https://ksrevenue.gov/taxnotices/notice24-09.pdf
+    source_format: pdf
+    source_as_of: "2024-07-01"
+    expression_date: "2024-07-01"
+    metadata:
+      primary_source: true
+      source_authority: Kansas Department of Revenue
+      document_subtype: tax_notice
+      document_number: Notice 24-09
+      program: individual_income_tax
+      topic: child_and_dependent_care_credit
+      discovered_via: policyengine-us:state_references
