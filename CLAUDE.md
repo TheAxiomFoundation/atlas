@@ -8,8 +8,8 @@ This file gives agent-facing guidance for working in `axiom-corpus`.
 normalizes, and publishes source text into corpus artifacts and Supabase. It does
 not own executable policy encodings.
 
-Encodings live in jurisdiction rules repositories such as `rules-us` and
-`rules-us-co` as RuleSpec `.yaml` files. Encoder and validation behavior lives in
+Encodings live in jurisdiction rules repositories such as `rulespec-us` and
+`rulespec-us-co` as RuleSpec `.yaml` files. Encoder and validation behavior lives in
 `axiom-encode`.
 
 ## Current Architecture

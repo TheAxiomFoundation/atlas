@@ -6,7 +6,7 @@ consumers:
 
 - **Axiom app** — renders body text with clickable `<a>` tags at the recorded
   `(start_offset, end_offset)` spans.
-- **RuleSpec tooling** (`axiom-encode`, `axiom-rules`) — uses outgoing
+- **RuleSpec tooling** (`axiom-encode`, `axiom-rules-engine`) — uses outgoing
   references as candidate dependencies for a generated `imports:` block.
 
 ## Schema

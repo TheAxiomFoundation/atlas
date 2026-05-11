@@ -17,7 +17,7 @@ jurisdiction:
 │    text="...",                  # Full text content                 │
 │  )                                                                  │
 ├─────────────────────────────────────────────────────────────────────┤
-│  RuleSpec path: rules-us-ca/statute/RTC/17041.yaml                  │
+│  RuleSpec path: rulespec-us-ca/statute/RTC/17041.yaml                  │
 │  Corpus path:   us-ca/statute/RTC/17041                             │
 └─────────────────────────────────────────────────────────────────────┘
 
@@ -34,9 +34,9 @@ jurisdiction:
 ### Jurisdiction IDs
 
 Jurisdiction IDs match RuleSpec repo naming:
-- `us` → `rules-us` (federal)
-- `us-ca` → `rules-us-ca` (California)
-- `us-ny` → `rules-us-ny` (New York)
+- `us` → `rulespec-us` (federal)
+- `us-ca` → `rulespec-us-ca` (California)
+- `us-ny` → `rulespec-us-ny` (New York)
 
 ### Storage
 

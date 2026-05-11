@@ -33,28 +33,28 @@ re-scrape unless upstream content has changed.
 
 | Jurisdiction | Sections | Repo |
 |---|---|---|
-| DC | 21,163 | `rules-us-dc` |
-| NV | 11,842 | `rules-us-nv` |
-| NY (selected consolidated laws) | 10,976 | `rules-us-ny` |
+| DC | 21,163 | `rulespec-us-dc` |
+| NV | 11,842 | `rulespec-us-nv` |
+| NY (selected consolidated laws) | 10,976 | `rulespec-us-ny` |
 
 ### US states — partial (content present, gaps known)
 
 | Jurisdiction | Repo | Notes |
 |---|---|---|
-| AZ | `rules-us-az` | Arizona Revised Statutes, partial |
-| DE | `rules-us-de` | Delaware Code, partial |
-| IA | `rules-us-ia` | Iowa Code, partial |
-| KY | `rules-us-ky` | Kentucky Revised Statutes, partial |
-| ME | `rules-us-me` | Maine Revised Statutes, partial |
-| ND | `rules-us-nd` | North Dakota Century Code, partial |
-| NE | `rules-us-ne` | Nebraska Revised Statutes, partial |
-| NH | `rules-us-nh` | New Hampshire Revised Statutes, partial |
-| OH | `rules-us-oh` | Ohio Revised Code, partial |
-| RI | `rules-us-ri` | Rhode Island General Laws, partial |
-| TX | `rules-us-tx` | Texas Statutes, partial |
-| VA | `rules-us-va` | Virginia Code, partial |
-| VT | `rules-us-vt` | Vermont Statutes, partial |
-| WY | `rules-us-wy` | Wyoming Statutes, partial |
+| AZ | `rulespec-us-az` | Arizona Revised Statutes, partial |
+| DE | `rulespec-us-de` | Delaware Code, partial |
+| IA | `rulespec-us-ia` | Iowa Code, partial |
+| KY | `rulespec-us-ky` | Kentucky Revised Statutes, partial |
+| ME | `rulespec-us-me` | Maine Revised Statutes, partial |
+| ND | `rulespec-us-nd` | North Dakota Century Code, partial |
+| NE | `rulespec-us-ne` | Nebraska Revised Statutes, partial |
+| NH | `rulespec-us-nh` | New Hampshire Revised Statutes, partial |
+| OH | `rulespec-us-oh` | Ohio Revised Code, partial |
+| RI | `rulespec-us-ri` | Rhode Island General Laws, partial |
+| TX | `rulespec-us-tx` | Texas Statutes, partial |
+| VA | `rulespec-us-va` | Virginia Code, partial |
+| VT | `rulespec-us-vt` | Vermont Statutes, partial |
+| WY | `rulespec-us-wy` | Wyoming Statutes, partial |
 
 ### US states — repo exists but 0 `.yaml` files
 
@@ -63,14 +63,14 @@ Content ingestion either hasn't run or hasn't produced usable output:
 
 | Jurisdiction | Repo | Likely reason |
 |---|---|---|
-| AL | `rules-us-al` | Crawled; converter/ingest not run |
-| AR | `rules-us-ar` | LexisNexis host; scrape captured only default pages (see below) |
-| FL | `rules-us-fl` | Scrape present in `data/statutes/`; converter output empty |
-| GA | `rules-us-ga` | Archive.org bulk download available; ingestion not yet run |
-| MD | `rules-us-md` | Not yet scraped |
-| NC | `rules-us-nc` | Archive.org bulk download available; ingestion not yet run |
-| SC | `rules-us-sc` | Scrape present; converter output empty |
-| TN | `rules-us-tn` | Archive.org bulk download available; ingestion not yet run |
+| AL | `rulespec-us-al` | Crawled; converter/ingest not run |
+| AR | `rulespec-us-ar` | LexisNexis host; scrape captured only default pages (see below) |
+| FL | `rulespec-us-fl` | Scrape present in `data/statutes/`; converter output empty |
+| GA | `rulespec-us-ga` | Archive.org bulk download available; ingestion not yet run |
+| MD | `rulespec-us-md` | Not yet scraped |
+| NC | `rulespec-us-nc` | Archive.org bulk download available; ingestion not yet run |
+| SC | `rulespec-us-sc` | Scrape present; converter output empty |
+| TN | `rulespec-us-tn` | Archive.org bulk download available; ingestion not yet run |
 
 ### US states — navigation-only scrapes (NOT usable)
 
@@ -171,10 +171,10 @@ materials. Do not push generated normalized source payloads to GitHub.
 
 | Repository | Sections | Source |
 |---|---|---|
-| `TheAxiomFoundation/rules-us` | 60,204 | US Code USLM XML |
-| `TheAxiomFoundation/rules-ca` | 601 | Canada LIMS XML |
-| `TheAxiomFoundation/rules-us-dc` | 21,163 | DC Law XML |
-| `TheAxiomFoundation/rules-uk` | ~3,236 | UK CLML XML |
+| `TheAxiomFoundation/rulespec-us` | 60,204 | US Code USLM XML |
+| `TheAxiomFoundation/rulespec-ca` | 601 | Canada LIMS XML |
+| `TheAxiomFoundation/rulespec-us-dc` | 21,163 | DC Law XML |
+| `TheAxiomFoundation/rulespec-uk` | ~3,236 | UK CLML XML |
 
 ### State repositories
 

@@ -541,9 +541,9 @@ def _resolve_encoded_paths(
 
     ``--rulespec-repo`` is a repeatable explicit checkout, paired with the
     jurisdiction it covers. ``--rulespec-root`` points at a directory holding
-    sibling ``rules-*`` checkouts and discovers each jurisdiction's repo by
+    sibling ``rulespec-*`` checkouts and discovers each jurisdiction's repo by
     name. ``--rulespec-auto`` (the default) silently looks for
-    ``../rules-{repo}`` next to this corpus checkout. Empty when no repo is
+    ``../rulespec-{repo}`` next to this corpus checkout. Empty when no repo is
     on disk for any input jurisdiction.
     """
     encoded: set[str] = set()
@@ -552,7 +552,7 @@ def _resolve_encoded_paths(
     repos: list[tuple[str, Path]] = []
     for repo_arg in args.rulespec_repo or []:
         repo_path = Path(repo_arg)
-        # Infer the jurisdiction from the repo dir name (rules-us-co -> us-co).
+        # Infer the jurisdiction from the repo dir name (rulespec-us-co -> us-co).
         repo_juris = _jurisdiction_for_repo_dir(repo_path.name)
         if repo_juris is None:
             print(
@@ -573,7 +573,7 @@ def _resolve_encoded_paths(
                     repos.append((j, root / repo_dir_name))
 
     if args.rulespec_auto:
-        # Auto-discover sibling rules-* checkouts next to this corpus repo.
+        # Auto-discover sibling rulespec-* checkouts next to this corpus repo.
         sibling_root = Path.cwd().parent
         for j in juris_list:
             repo_dir_name = JURISDICTION_REPO_MAP.get(j)
@@ -3114,13 +3114,13 @@ def _artifact_scope_filter_supplied(args: argparse.Namespace) -> bool:
 
 def _add_rulespec_args(sub_parser: argparse.ArgumentParser) -> None:
     """Attach the shared --rulespec-* flags so build-navigation-index and
-    load-supabase can both pull encoded paths from local rules-* checkouts."""
+    load-supabase can both pull encoded paths from local rulespec-* checkouts."""
     sub_parser.add_argument(
         "--rulespec-repo",
         action="append",
         default=[],
         help=(
-            "Path to a local rules-* checkout (e.g. /path/to/rules-us). "
+            "Path to a local rulespec-* checkout (e.g. /path/to/rulespec-us). "
             "Repeatable. Jurisdiction is inferred from the directory name."
         ),
     )
@@ -3129,9 +3129,9 @@ def _add_rulespec_args(sub_parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
         help=(
-            "Path to a directory holding sibling rules-* checkouts. The "
-            "builder discovers each jurisdiction's repo by name (rules-us, "
-            "rules-us-co, …). Repeatable."
+            "Path to a directory holding sibling rulespec-* checkouts. The "
+            "builder discovers each jurisdiction's repo by name (rulespec-us, "
+            "rulespec-us-co, …). Repeatable."
         ),
     )
     sub_parser.add_argument(
@@ -3139,7 +3139,7 @@ def _add_rulespec_args(sub_parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "Automatically check ../rules-{repo} next to the corpus checkout "
+            "Automatically check ../rulespec-{repo} next to the corpus checkout "
             "for each input jurisdiction. Disable with --no-rulespec-auto."
         ),
     )

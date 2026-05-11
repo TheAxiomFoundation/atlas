@@ -320,7 +320,7 @@ class _StateSectionExtractor(Extractor):
 # Map from lowercased, punctuation-light law names to the directory
 # codes used as the second path segment in ``us-ny/statute/{code}/...``.
 # Populated from the 40 law codes present in the corpus — see the
-# ingest driver's source repo (``rules-us-ny``) for the canonical set.
+# ingest driver's source repo (``rulespec-us-ny``) for the canonical set.
 # Entries kept conservative: we'd rather miss a cross-law ref than
 # mis-resolve one. Alternative spellings (with/without Oxford comma,
 # apostrophe) are duplicated so regex text matches regardless of
@@ -386,7 +386,7 @@ class NYExtractor(_StateSectionExtractor):
 
 # CA statutory law is organized into ~30 named "Codes" (Revenue and
 # Taxation Code, Labor Code, ...) rather than numbered titles. Upstream
-# ``rules-us-ca`` stores each under a short directory code used as the
+# ``rulespec-us-ca`` stores each under a short directory code used as the
 # second path segment in ``us-ca/statute/{code}/...``. Map the prose
 # names that appear in citations back to those codes. Missing entries
 # cause the cross-code pattern to ignore a match rather than mis-resolve

@@ -16,7 +16,7 @@ provision records. Encodings live outside this repo.
 | Repo | Purpose |
 |---|---|
 | `axiom-corpus` | Source-document ingestion, corpus artifacts, Supabase loads |
-| `rules-*` | Jurisdiction RuleSpec YAML encodings and tests |
+| `rulespec-*` | Jurisdiction RuleSpec YAML encodings and tests |
 | `axiom-encode` | Encoder, validation, source verification, CI helpers |
 | `axiom-foundation.org` | Axiom web app |
 

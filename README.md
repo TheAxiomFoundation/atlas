@@ -186,6 +186,6 @@ Apache 2.0
 
 ## Related Repos
 
-- [axiom-rules](https://github.com/TheAxiomFoundation/axiom-rules) — RuleSpec compiler and runtime
+- [axiom-rules-engine](https://github.com/TheAxiomFoundation/axiom-rules-engine) — RuleSpec compiler and runtime
 - [axiom-encode](https://github.com/TheAxiomFoundation/axiom-encode) — Encoder pipeline for generating RuleSpec from source law
-- [rules-us](https://github.com/TheAxiomFoundation/rules-us) — US federal rules in RuleSpec
+- [rulespec-us](https://github.com/TheAxiomFoundation/rulespec-us) — US federal rules in RuleSpec

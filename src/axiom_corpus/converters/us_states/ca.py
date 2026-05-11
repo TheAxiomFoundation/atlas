@@ -16,7 +16,7 @@ Example usage:
     # Fetch a section
     statute = converter.fetch("rtc/17052")  # CA EITC section
     print(statute.citation)  # "CA RTC 17052"
-    print(statute.rulespec_path)  # "rules-us-ca/statute/RTC/17052.yaml"
+    print(statute.rulespec_path)  # "rulespec-us-ca/statute/RTC/17052.yaml"
 
     # Fetch with caching
     statute = converter.fetch("wic/11320.3", cache=True)

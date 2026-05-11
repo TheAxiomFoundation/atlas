@@ -120,7 +120,7 @@ def build_navigation_nodes(
     on the CLI: callers that want the full corpus pass them as ``None``.
 
     ``encoded_paths`` augments ``record.has_rulespec`` from an external source
-    (typically the jurisdiction's `rules-*` repo, see
+    (typically the jurisdiction's `rulespec-*` repo, see
     ``axiom_corpus.corpus.rulespec_paths``). A node whose path is in the set
     is treated as encoded even when the corresponding provision row has
     ``has_rulespec=False``. Ancestor ``encoded_descendant_count`` then

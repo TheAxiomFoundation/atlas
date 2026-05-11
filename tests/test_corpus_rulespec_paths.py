@@ -1,4 +1,4 @@
-"""Tests for rules-* repo path discovery and citation-path mapping."""
+"""Tests for rulespec-* repo path discovery and citation-path mapping."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def _touch(path: Path, body: str = "rule: {}\n") -> None:
 
 
 def test_us_statute_yaml_maps_to_canonical_citation_path(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / "statutes" / "7" / "2014" / "e" / "2.yaml")
 
     encoded = discover_encoded_paths(repo, "us")
@@ -25,7 +25,7 @@ def test_us_statute_yaml_maps_to_canonical_citation_path(tmp_path: Path) -> None
 
 
 def test_us_statute_top_section_yaml_maps_to_path(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / "statutes" / "26" / "3111" / "a.yaml")
 
     encoded = discover_encoded_paths(repo, "us")
@@ -34,7 +34,7 @@ def test_us_statute_top_section_yaml_maps_to_path(tmp_path: Path) -> None:
 
 
 def test_us_regulations_strip_cfr_suffix(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / "regulations" / "7-cfr" / "273" / "7.yaml")
 
     encoded = discover_encoded_paths(repo, "us")
@@ -44,7 +44,7 @@ def test_us_regulations_strip_cfr_suffix(tmp_path: Path) -> None:
 
 
 def test_state_regulations_keep_cfr_style_title(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us-co"
+    repo = tmp_path / "rulespec-us-co"
     _touch(repo / "regulations" / "10-ccr-2506-1" / "4.306.1.yaml")
 
     encoded = discover_encoded_paths(repo, "us-co")
@@ -54,7 +54,7 @@ def test_state_regulations_keep_cfr_style_title(tmp_path: Path) -> None:
 
 
 def test_test_yaml_files_are_excluded(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / "statutes" / "26" / "3111" / "a.yaml")
     _touch(repo / "statutes" / "26" / "3111" / "a.test.yaml")
 
@@ -64,7 +64,7 @@ def test_test_yaml_files_are_excluded(tmp_path: Path) -> None:
 
 
 def test_meta_yaml_files_are_excluded(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / "statutes" / "26" / "3111" / "a.yaml")
     _touch(repo / "statutes" / "26" / "3111" / "a.meta.yaml")
 
@@ -74,7 +74,7 @@ def test_meta_yaml_files_are_excluded(tmp_path: Path) -> None:
 
 
 def test_files_under_tests_directory_are_skipped(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / "tests" / "fixture.yaml")
     _touch(repo / "statutes" / "26" / "3111" / "a.yaml")
 
@@ -84,7 +84,7 @@ def test_files_under_tests_directory_are_skipped(tmp_path: Path) -> None:
 
 
 def test_hidden_directories_are_skipped(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / ".github" / "workflows" / "ci.yaml")
     _touch(repo / "statutes" / "26" / "3111" / "a.yaml")
 
@@ -94,7 +94,7 @@ def test_hidden_directories_are_skipped(tmp_path: Path) -> None:
 
 
 def test_policies_bucket_maps_to_policy(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / "policies" / "irs" / "rev-proc-2025-32" / "standard-deduction.yaml")
 
     encoded = discover_encoded_paths(repo, "us")
@@ -107,8 +107,8 @@ def test_missing_repo_returns_empty_set(tmp_path: Path) -> None:
 
 
 def test_root_discovery_for_multiple_jurisdictions(tmp_path: Path) -> None:
-    _touch(tmp_path / "rules-us" / "statutes" / "26" / "3111" / "a.yaml")
-    _touch(tmp_path / "rules-us-co" / "regulations" / "10-ccr-2506-1" / "4.306.1.yaml")
+    _touch(tmp_path / "rulespec-us" / "statutes" / "26" / "3111" / "a.yaml")
+    _touch(tmp_path / "rulespec-us-co" / "regulations" / "10-ccr-2506-1" / "4.306.1.yaml")
 
     discovered = discover_encoded_paths_for_jurisdictions(tmp_path, ["us", "us-co", "uk"])
 
@@ -118,7 +118,7 @@ def test_root_discovery_for_multiple_jurisdictions(tmp_path: Path) -> None:
 
 
 def test_unknown_bucket_passes_through(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / "manuals" / "irs" / "irm-1.yaml")
 
     encoded = discover_encoded_paths(repo, "us")
@@ -129,7 +129,7 @@ def test_unknown_bucket_passes_through(tmp_path: Path) -> None:
 
 
 def test_files_at_repo_root_are_skipped(tmp_path: Path) -> None:
-    repo = tmp_path / "rules-us"
+    repo = tmp_path / "rulespec-us"
     _touch(repo / "config.yaml")
     _touch(repo / "statutes" / "26" / "3111" / "a.yaml")
 

@@ -24,7 +24,7 @@ def _make_rule(**kwargs):
         "repeal_date": None,
         "source_url": "https://uscode.house.gov",
         "source_path": "26/32",
-        "rulespec_path": "rules-us/statute/26/32.yaml",
+        "rulespec_path": "rulespec-us/statute/26/32.yaml",
         "has_rulespec": True,
         "citation_path": "us/statute/26/32",
     }

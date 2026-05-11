@@ -6,8 +6,8 @@ so it can populate `corpus.navigation_nodes.has_rulespec` and the bottom-up
 unset because the corpus pipeline doesn't currently track RuleSpec coverage —
 the canonical record is a YAML file in a jurisdiction's rules repo.
 
-This module bridges that gap. Given the local checkout of a `rules-*` repo
-(e.g. `rules-us`, `rules-us-co`), it walks the encoding directories, filters
+This module bridges that gap. Given the local checkout of a `rulespec-*` repo
+(e.g. `rulespec-us`, `rulespec-us-co`), it walks the encoding directories, filters
 out `.test.yaml` / `.meta.yaml` fixtures, and produces canonical corpus
 citation paths (`us/statute/26/3111/a`).
 
@@ -20,24 +20,25 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-# Canonical jurisdiction slug -> rules-* repo directory name.
+# Canonical jurisdiction slug -> rulespec-* repo directory name.
 # Mirrors axiom-foundation.org/src/lib/axiom/repo-map.ts; keep in sync when
 # new jurisdictions get rules repos.
 JURISDICTION_REPO_MAP: dict[str, str] = {
-    "us": "rules-us",
-    "uk": "rules-uk",
-    "canada": "rules-ca",
-    "us-al": "rules-us-al",
-    "us-ar": "rules-us-ar",
-    "us-ca": "rules-us-ca",
-    "us-co": "rules-us-co",
-    "us-fl": "rules-us-fl",
-    "us-ga": "rules-us-ga",
-    "us-md": "rules-us-md",
-    "us-nc": "rules-us-nc",
-    "us-sc": "rules-us-sc",
-    "us-tn": "rules-us-tn",
-    "us-tx": "rules-us-tx",
+    "us": "rulespec-us",
+    "uk": "rulespec-uk",
+    "canada": "rulespec-ca",
+    "us-al": "rulespec-us-al",
+    "us-ar": "rulespec-us-ar",
+    "us-ca": "rulespec-us-ca",
+    "us-co": "rulespec-us-co",
+    "us-fl": "rulespec-us-fl",
+    "us-ga": "rulespec-us-ga",
+    "us-md": "rulespec-us-md",
+    "us-nc": "rulespec-us-nc",
+    "us-ny": "rulespec-us-ny",
+    "us-sc": "rulespec-us-sc",
+    "us-tn": "rulespec-us-tn",
+    "us-tx": "rulespec-us-tx",
 }
 
 # Top-level bucket directory name -> citation_path bucket segment.
@@ -91,7 +92,7 @@ def discover_encoded_paths_for_jurisdictions(
     """Discover encoded paths for several jurisdictions under one root dir.
 
     ``rulespec_root`` is the parent directory containing sibling
-    ``rules-us``, ``rules-us-co``, ``rules-ca`` checkouts. Jurisdictions
+    ``rulespec-us``, ``rulespec-us-co``, ``rulespec-ca`` checkouts. Jurisdictions
     that don't have an entry in ``JURISDICTION_REPO_MAP`` (or whose repo
     isn't on disk) get an empty set.
     """
@@ -149,7 +150,7 @@ def _normalize_tail(
 ) -> list[str]:
     """Apply jurisdiction-specific tweaks so paths agree with the corpus.
 
-    ``rules-us/regulations/7-cfr/...`` lands as ``us/regulation/7/...`` in the
+    ``rulespec-us/regulations/7-cfr/...`` lands as ``us/regulation/7/...`` in the
     corpus — the publication-system suffix gets dropped on the title.
     Mirrors the app's ``normaliseTitleSegment``.
     """
