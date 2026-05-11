@@ -34,6 +34,7 @@ DOCUMENT_HTML = """
 <div class="co_title"><div class="co_headtext">353.1 Introduction and applicability.</div></div>
 <div class="co_contentBlock co_section"><div class="co_contentBlock co_body">
 <div class="co_paragraph"><div class="co_paragraphText">This Part implements subdivision 5 of section 211 of the Social Services Law.</div></div>
+<a href="/nycrr/Document/doc-cross-ref?viewType=FullText&amp;transitionType=Default&amp;contextData=(sc.Default)">18 CRR-NY 360.1</a>
 </div></div>
 <div>Current through September 15, 2021</div><table id="co_endOfDocument"><tr><td>End of Document</td></tr></table>
 </div></div>

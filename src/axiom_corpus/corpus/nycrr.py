@@ -199,13 +199,14 @@ def extract_nycrr(
 
         if limit is not None and len(records) >= limit:
             break
-        child_links = _child_links(soup, only_title=only_title if citation_path == _root_path() else None)
-        for ordinal, (href, text) in enumerate(child_links, start=1):
-            child_url = _normalize_url(href, include_browserhawk=True)
-            if child_url is None or child_url in seen or child_url in queued:
-                continue
-            queued.add(child_url)
-            queue.append(_QueuedPage(child_url, citation_path, text, ordinal))
+        if page_type != "document":
+            child_links = _child_links(soup, only_title=only_title if citation_path == _root_path() else None)
+            for ordinal, (href, text) in enumerate(child_links, start=1):
+                child_url = _normalize_url(href, include_browserhawk=True)
+                if child_url is None or child_url in seen or child_url in queued:
+                    continue
+                queued.add(child_url)
+                queue.append(_QueuedPage(child_url, citation_path, text, ordinal))
 
     inventory_path = store.inventory_path("us-ny", DocumentClass.REGULATION, run_id)
     store.write_inventory(inventory_path, items)
