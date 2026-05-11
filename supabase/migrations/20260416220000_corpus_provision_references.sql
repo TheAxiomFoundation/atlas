@@ -6,8 +6,8 @@
 --
 -- Dual consumer:
 --   * Axiom viewer — render body text with clickable <a> tags at
---     (start_offset, end_offset), linking to /axiom/{target_citation_path}.
---   * RuleSpec tooling (axiom-encode, rules-compile) — use the outgoing refs of an
+--     (start_offset, end_offset), linking to /{target_citation_path}.
+--   * RuleSpec tooling (axiom-encode, axiom-rules-engine) — use the outgoing refs of an
 --     encoded rule as the candidate list for its `imports:` block.
 --
 -- The table is append-only on extraction; the extractor is idempotent
