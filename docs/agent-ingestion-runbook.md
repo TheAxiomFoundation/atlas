@@ -18,11 +18,15 @@ controller steps after review.
 
 ## Scope Selection
 
-Start with `agent_ready` queue items. Avoid `blocked_release_repair` items
-unless the controller explicitly assigns them; many of those states already
-have R2 artifacts but are missing local artifacts in this checkout, so adapter
-work is not always the right fix. Do not touch `done` states except for
-targeted bug fixes.
+Start with `agent_ready` queue items and official/open candidates from the
+source-discovery report. Do not assign `source_access_blocked`,
+`blocked_primary_source`, or `vendor_permission_needed` items to extraction
+agents; those need an official bulk/source export, a permission or license
+path, or cleared official-site access before engineering work is useful. Avoid
+`blocked_release_repair` items unless the controller explicitly assigns them;
+many of those states already have R2 artifacts but are missing local artifacts
+in this checkout, so adapter work is not always the right fix. Do not touch
+`done` states except for targeted bug fixes.
 
 For each assigned state, first find the current primary official source. If the
 state provides bulk XML, JSON, ZIP, SQL, or downloadable HTML, prefer that over

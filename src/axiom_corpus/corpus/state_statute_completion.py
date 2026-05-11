@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from axiom_corpus.corpus.analytics import load_provision_count_snapshot
 from axiom_corpus.corpus.r2 import ArtifactReport, ArtifactScopeRow
@@ -24,13 +27,41 @@ class StateStatuteCompletionStatus(StrEnum):
     LOCAL_ARTIFACTS_PRESENT_NOT_PROMOTED = "local_artifacts_present_not_promoted"
     LOCAL_ARTIFACTS_INCOMPLETE = "local_artifacts_incomplete"
     SUPABASE_ONLY_LEGACY = "supabase_only_legacy"
+    SOURCE_ACCESS_BLOCKED = "source_access_blocked"
     MISSING_SOURCE_FIRST_EXTRACTION = "missing_source_first_extraction"
+
+
+BLOCKED_SOURCE_ACCESS_QUEUE_STATUSES = frozenset(
+    {
+        "blocked_primary_source",
+        "source_access_blocked",
+        "vendor_permission_needed",
+    }
+)
+BLOCKED_SOURCE_ACCESS_PRODUCTION_STATUSES = frozenset(
+    {
+        "blocked_primary_source",
+        "source_access_blocked",
+        "vendor_permission_needed",
+    }
+)
 
 
 @dataclass(frozen=True)
 class StateStatuteJurisdiction:
     jurisdiction: str
     name: str
+
+
+@dataclass(frozen=True)
+class SourceAccessStatus:
+    jurisdiction: str
+    status: str
+    note: str | None = None
+
+    @property
+    def blocked(self) -> bool:
+        return status_is_source_access_blocked(self.status)
 
 
 US_STATE_STATUTE_JURISDICTIONS: tuple[StateStatuteJurisdiction, ...] = (
@@ -132,6 +163,8 @@ class StateStatuteCompletionRow:
     validation_warning_count: int
     validation_codes: tuple[str, ...]
     mismatch_reasons: tuple[str, ...]
+    source_access_status: str | None
+    source_access_note: str | None
     next_action: str
 
     def to_mapping(self) -> dict[str, Any]:
@@ -154,6 +187,8 @@ class StateStatuteCompletionRow:
             "validation_warning_count": self.validation_warning_count,
             "validation_codes": list(self.validation_codes),
             "mismatch_reasons": list(self.mismatch_reasons),
+            "source_access_status": self.source_access_status,
+            "source_access_note": self.source_access_note,
             "next_action": self.next_action,
         }
 
@@ -222,6 +257,7 @@ def build_state_statute_completion_report(
     artifact_report: ArtifactReport,
     supabase_counts_path: str | Path | None = None,
     validation_report_path: str | Path | None = None,
+    source_access_statuses: Mapping[str, SourceAccessStatus] | None = None,
     expected_jurisdictions: tuple[StateStatuteJurisdiction, ...] = US_STATE_STATUTE_JURISDICTIONS,
 ) -> StateStatuteCompletionReport:
     """Classify each state statute corpus against source-first production state."""
@@ -250,6 +286,11 @@ def build_state_statute_completion_report(
                 STATE_STATUTE_DOCUMENT_CLASS,
             ),
             validation=validation,
+            source_access_status=(
+                source_access_statuses.get(state.jurisdiction)
+                if source_access_statuses is not None
+                else None
+            ),
         )
         for state in expected_jurisdictions
     )
@@ -274,6 +315,7 @@ def _build_completion_row(
     artifact_rows: tuple[ArtifactScopeRow, ...],
     supabase_count: int | None,
     validation: ValidationReportState,
+    source_access_status: SourceAccessStatus | None = None,
 ) -> StateStatuteCompletionRow:
     best_row = _best_artifact_row(artifact_rows)
     complete_unpromoted_row = _best_complete_unpromoted_row(artifact_rows)
@@ -302,6 +344,7 @@ def _build_completion_row(
         validation=validation,
         validation_summary=validation_summary,
         mismatch_reasons=mismatch_reasons,
+        source_access_status=source_access_status,
     )
     return StateStatuteCompletionRow(
         jurisdiction=state.jurisdiction,
@@ -322,6 +365,10 @@ def _build_completion_row(
         validation_warning_count=validation_summary.warning_count,
         validation_codes=validation_summary.codes,
         mismatch_reasons=mismatch_reasons,
+        source_access_status=(
+            source_access_status.status if source_access_status is not None else None
+        ),
+        source_access_note=source_access_status.note if source_access_status is not None else None,
         next_action=_next_action(status),
     )
 
@@ -336,6 +383,7 @@ def _classify_status(
     validation: ValidationReportState,
     validation_summary: ValidationScopeSummary,
     mismatch_reasons: tuple[str, ...],
+    source_access_status: SourceAccessStatus | None,
 ) -> StateStatuteCompletionStatus:
     if release_scope is not None:
         if (
@@ -349,6 +397,9 @@ def _classify_status(
         ):
             return StateStatuteCompletionStatus.PRODUCTIONIZED_AND_VALIDATED
         return StateStatuteCompletionStatus.PRODUCTION_BLOCKED_OR_INCOMPLETE
+
+    if source_access_status is not None and source_access_status.blocked:
+        return StateStatuteCompletionStatus.SOURCE_ACCESS_BLOCKED
 
     if complete_unpromoted_row is not None:
         return StateStatuteCompletionStatus.LOCAL_ARTIFACTS_PRESENT_NOT_PROMOTED
@@ -405,7 +456,52 @@ def _next_action(status: StateStatuteCompletionStatus) -> str:
         return "rerun or repair source-first extraction until inventory, provisions, and coverage are complete"
     if status is StateStatuteCompletionStatus.SUPABASE_ONLY_LEGACY:
         return "rerun from primary official sources into source-first artifacts"
+    if status is StateStatuteCompletionStatus.SOURCE_ACCESS_BLOCKED:
+        return (
+            "wait for official bulk/source export, permission/license path, or cleared "
+            "official-site access"
+        )
     return "build a source-first extractor from primary official sources"
+
+
+def load_source_access_statuses(path: str | Path | None) -> dict[str, SourceAccessStatus]:
+    """Load source-access blockers from the state statute agent queue."""
+
+    if path is None:
+        return {}
+    queue_path = Path(path)
+    if not queue_path.exists():
+        return {}
+    payload = yaml.safe_load(queue_path.read_text()) or {}
+    states = payload.get("states", [])
+    if not isinstance(states, list):
+        return {}
+    statuses: dict[str, SourceAccessStatus] = {}
+    for item in states:
+        if not isinstance(item, dict):
+            continue
+        jurisdiction = item.get("jurisdiction")
+        if not jurisdiction:
+            continue
+        queue_status = str(item.get("queue_status") or "")
+        production_status = str(item.get("production_status") or "")
+        status = production_status if status_is_source_access_blocked(production_status) else queue_status
+        if not status_is_source_access_blocked(status):
+            continue
+        notes = item.get("notes")
+        statuses[str(jurisdiction)] = SourceAccessStatus(
+            jurisdiction=str(jurisdiction),
+            status=status,
+            note=str(notes) if notes else None,
+        )
+    return statuses
+
+
+def status_is_source_access_blocked(status: str) -> bool:
+    return (
+        status in BLOCKED_SOURCE_ACCESS_QUEUE_STATUSES
+        or status in BLOCKED_SOURCE_ACCESS_PRODUCTION_STATUSES
+    )
 
 
 def _release_statute_scopes_by_jurisdiction(

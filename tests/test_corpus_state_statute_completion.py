@@ -13,9 +13,11 @@ from axiom_corpus.corpus.r2 import (
 )
 from axiom_corpus.corpus.releases import ReleaseManifest, ReleaseScope
 from axiom_corpus.corpus.state_statute_completion import (
+    SourceAccessStatus,
     StateStatuteCompletionStatus,
     StateStatuteJurisdiction,
     build_state_statute_completion_report,
+    load_source_access_statuses,
 )
 
 
@@ -154,6 +156,70 @@ def test_state_statute_completion_cli_writes_report(tmp_path, capsys):
     assert written["release"] == "current"
     assert written["rows"][5]["jurisdiction"] == "us-co"
     assert written["rows"][5]["status"] == "productionized_and_validated"
+
+
+def test_state_statute_completion_marks_source_access_blockers(tmp_path):
+    artifact_report = ArtifactReport(
+        local_root=tmp_path,
+        prefixes=("sources", "inventory", "provisions", "coverage"),
+        local_count=1,
+        local_bytes=1,
+        local_by_prefix={},
+        remote_count=None,
+        remote_bytes=None,
+        remote_by_prefix=None,
+        rows=(
+            ArtifactScopeRow(
+                jurisdiction="us-mo",
+                document_class="statute",
+                version="2026-05-11",
+                local_inventory=True,
+            ),
+        ),
+    )
+    release = ReleaseManifest(name="current", scopes=())
+
+    report = build_state_statute_completion_report(
+        tmp_path,
+        release=release,
+        artifact_report=artifact_report,
+        source_access_statuses={
+            "us-mo": SourceAccessStatus(
+                jurisdiction="us-mo",
+                status="blocked_primary_source",
+                note="official site is blocking extraction",
+            )
+        },
+        expected_jurisdictions=(StateStatuteJurisdiction("us-mo", "Missouri"),),
+    )
+    row = report.rows[0]
+
+    assert row.status is StateStatuteCompletionStatus.SOURCE_ACCESS_BLOCKED
+    assert row.source_access_status == "blocked_primary_source"
+    assert row.source_access_note == "official site is blocking extraction"
+    assert "permission/license" in row.next_action
+
+
+def test_load_source_access_statuses_reads_blocked_queue_rows(tmp_path):
+    queue = tmp_path / "state-statute-agent-queue.yaml"
+    queue.write_text(
+        """
+states:
+  - jurisdiction: us-ar
+    queue_status: blocked_primary_source
+    production_status: supabase_only_legacy
+    notes: Lexis robot validation blocks section text.
+  - jurisdiction: us-co
+    queue_status: done
+    production_status: productionized_and_validated
+"""
+    )
+
+    statuses = load_source_access_statuses(queue)
+
+    assert statuses["us-ar"].blocked is True
+    assert statuses["us-ar"].note == "Lexis robot validation blocks section text."
+    assert "us-co" not in statuses
 
 
 def test_state_statute_completion_blocks_release_on_mismatches(tmp_path):

@@ -64,3 +64,8 @@ The current ops artifact is
 static URL lists under `sources/policyengine-us/`. It powers the Axiom `/ops`
 Source Discovery Backlog section and should be refreshed when the offline
 inventory changes.
+
+For agent assignment, prefer `ready_for_manifest` rows whose source status is
+`primary_official`. Do not assign vendor-only or source-access-blocked items to
+ingestion agents until there is an explicit official export, license, or access
+path to use.

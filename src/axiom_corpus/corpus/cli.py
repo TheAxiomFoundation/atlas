@@ -137,6 +137,7 @@ from axiom_corpus.corpus.state_adapters.wisconsin import (
 )
 from axiom_corpus.corpus.state_statute_completion import (
     build_state_statute_completion_report,
+    load_source_access_statuses,
 )
 from axiom_corpus.corpus.states import (
     StateStatuteExtractReport,
@@ -3017,6 +3018,9 @@ def _cmd_state_statute_completion(args: argparse.Namespace) -> int:
     release_path = resolve_release_manifest_path(args.base, args.release)
     release = ReleaseManifest.load(release_path)
     prefixes = tuple(args.prefix or DEFAULT_RELEASE_ARTIFACT_PREFIXES)
+    source_access_queue = _resolve_state_source_access_queue(
+        args.base, args.source_access_queue
+    )
     validation_report_path = args.validation_report
     if validation_report_path is None:
         candidate = args.base / "analytics" / f"validate-release-{release.name}.json"
@@ -3048,9 +3052,12 @@ def _cmd_state_statute_completion(args: argparse.Namespace) -> int:
         artifact_report=artifact_report,
         supabase_counts_path=args.supabase_counts,
         validation_report_path=validation_report_path,
+        source_access_statuses=load_source_access_statuses(source_access_queue),
     )
     payload = report.to_mapping()
     payload["release_path"] = str(release_path)
+    if source_access_queue is not None:
+        payload["source_access_queue_path"] = str(source_access_queue)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
@@ -3129,6 +3136,19 @@ def _cmd_source_discovery(args: argparse.Namespace) -> int:
         payload["written_to"] = str(args.output)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
+
+
+def _resolve_state_source_access_queue(base: Path, value: Path | None) -> Path | None:
+    if value is not None:
+        return value if str(value) else None
+    candidates = (
+        Path("manifests/state-statute-agent-queue.yaml"),
+        base.parent.parent / "manifests" / "state-statute-agent-queue.yaml",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _artifact_scope_filter_supplied(args: argparse.Namespace) -> bool:
@@ -4048,6 +4068,14 @@ def build_parser() -> argparse.ArgumentParser:
     state_statute_completion.add_argument("--bucket")
     state_statute_completion.add_argument("--endpoint-url")
     state_statute_completion.add_argument("--credentials-file", type=Path)
+    state_statute_completion.add_argument(
+        "--source-access-queue",
+        type=Path,
+        help=(
+            "State statute agent queue with blocked source-access statuses. "
+            "Defaults to manifests/state-statute-agent-queue.yaml when present."
+        ),
+    )
     state_statute_completion.add_argument("--output", type=Path)
     state_statute_completion.add_argument(
         "--require-complete",
