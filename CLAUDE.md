@@ -50,6 +50,13 @@ uv run axiom-corpus-ingest extract-official-documents \
   --version <version> \
   --manifest manifests/<manifest>.yaml
 
+# Extract California CalFresh regulations (CDSS MPP §63 DOCX)
+uv run axiom-corpus-ingest extract-california-mpp-calfresh \
+  --base data/corpus \
+  --version <version> \
+  --manifest manifests/us-ca-cdss-mpp-calfresh.yaml \
+  --download-dir <local-cache-dir>
+
 # Upload generated artifacts to R2
 uv run axiom-corpus-ingest sync-r2 \
   --base data/corpus \

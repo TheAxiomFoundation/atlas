@@ -17,6 +17,10 @@ from axiom_corpus.corpus.analytics import (
     load_provision_count_snapshot,
 )
 from axiom_corpus.corpus.artifacts import CorpusArtifactStore, sha256_bytes
+from axiom_corpus.corpus.california_mpp import (
+    MppDocxSource,
+    extract_california_mpp_calfresh,
+)
 from axiom_corpus.corpus.colorado import extract_colorado_ccr
 from axiom_corpus.corpus.coverage import compare_provision_coverage
 from axiom_corpus.corpus.documents import extract_official_documents
@@ -2764,6 +2768,75 @@ def _cmd_extract_nycrr(args: argparse.Namespace) -> int:
     return 0 if report.coverage.complete or args.allow_incomplete else 2
 
 
+def _cmd_extract_california_mpp_calfresh(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    docx_sources = _load_california_mpp_docx_sources(args.manifest)
+    report = extract_california_mpp_calfresh(
+        store,
+        version=args.version,
+        docx_sources=docx_sources,
+        download_dir=args.download_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        request_delay_seconds=args.delay_seconds,
+        timeout_seconds=args.timeout_seconds,
+        request_attempts=args.request_attempts,
+    )
+    print(
+        json.dumps(
+            {
+                "adapter": "california-mpp-calfresh",
+                "jurisdiction": report.jurisdiction,
+                "document_class": report.document_class,
+                "version": args.version,
+                "source_file_count": len(report.source_paths),
+                "section_count": report.section_count,
+                "subsection_count": report.subsection_count,
+                "container_count": report.container_count,
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
+def _load_california_mpp_docx_sources(manifest_path: Path) -> tuple[MppDocxSource, ...]:
+    """Load DOCX source declarations from the CA MPP manifest."""
+    import yaml  # local import — cli.py already pulls yaml via other paths
+
+    manifest = yaml.safe_load(manifest_path.read_text())
+    sources = manifest.get("sources") or []
+    if not sources:
+        raise ValueError(f"manifest has no sources entry: {manifest_path}")
+    # MVP: take the first source block. Multi-source manifests can grow later.
+    options = sources[0].get("options") or {}
+    docx_sources_raw = options.get("docx_sources") or []
+    if not docx_sources_raw:
+        raise ValueError(f"manifest has no docx_sources under options: {manifest_path}")
+    return tuple(
+        MppDocxSource(
+            file=str(entry["file"]),
+            url=str(entry["url"]),
+            chapter=str(entry["chapter"]),
+            sections=tuple(str(s) for s in entry.get("sections", ())),
+            summary=str(entry.get("summary", "")),
+        )
+        for entry in docx_sources_raw
+    )
+
+
 def _cmd_extract_ny_state_register(args: argparse.Namespace) -> int:
     store = CorpusArtifactStore(args.base)
     expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
@@ -3676,6 +3749,27 @@ def build_parser() -> argparse.ArgumentParser:
     extract_nycrr_cmd.add_argument("--refresh", action="store_true")
     extract_nycrr_cmd.add_argument("--allow-incomplete", action="store_true")
     extract_nycrr_cmd.set_defaults(func=_cmd_extract_nycrr)
+
+    extract_california_mpp_cmd = sub.add_parser(
+        "extract-california-mpp-calfresh",
+        help="Snapshot CDSS MPP Division 63 (CalFresh) DOCX files.",
+    )
+    extract_california_mpp_cmd.add_argument("--base", type=Path, required=True)
+    extract_california_mpp_cmd.add_argument("--version", required=True)
+    extract_california_mpp_cmd.add_argument(
+        "--manifest",
+        type=Path,
+        required=True,
+        help="Path to manifests/us-ca-cdss-mpp-calfresh.yaml (declares the DOCX source set).",
+    )
+    extract_california_mpp_cmd.add_argument("--download-dir", type=Path)
+    extract_california_mpp_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_california_mpp_cmd.add_argument("--expression-date")
+    extract_california_mpp_cmd.add_argument("--delay-seconds", type=float, default=0.25)
+    extract_california_mpp_cmd.add_argument("--timeout-seconds", type=float, default=60.0)
+    extract_california_mpp_cmd.add_argument("--request-attempts", type=int, default=3)
+    extract_california_mpp_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_california_mpp_cmd.set_defaults(func=_cmd_extract_california_mpp_calfresh)
 
     extract_ny_state_register_cmd = sub.add_parser(
         "extract-ny-state-register",

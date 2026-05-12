@@ -1,5 +1,5 @@
-"""California statute parsers."""
+"""California parsers."""
 
-from .statutes import CaliforniaStatuteParser
+from .statutes import CaliforniaStatutesParser
 
-__all__ = ["CaliforniaStatuteParser"]  # pragma: no cover
+__all__ = ["CaliforniaStatutesParser"]  # pragma: no cover
