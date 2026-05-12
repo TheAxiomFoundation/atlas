@@ -69,3 +69,10 @@ For agent assignment, prefer `ready_for_manifest` rows whose source status is
 `primary_official`. Do not assign vendor-only or source-access-blocked items to
 ingestion agents until there is an explicit official export, license, or access
 path to use.
+
+Use `group_rows` in the report before assigning work from raw `rows`.
+`group_rows` collapses uncovered `ready_for_manifest` URLs into actionable
+manifest candidates by jurisdiction, document class, and source family. This is
+especially important for forms, where the raw inventory often contains multiple
+yearly tax booklet, schedule, and instruction URLs that should be scoped as a
+coherent current-year manifest before historical years are added.

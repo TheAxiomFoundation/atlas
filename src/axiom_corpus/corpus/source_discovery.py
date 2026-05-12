@@ -110,6 +110,38 @@ class SourceDiscoveryDomainRow:
 
 
 @dataclass(frozen=True)
+class SourceDiscoveryGroupRow:
+    """Actionable group of ready source leads that should become one manifest scope."""
+
+    group_key: str
+    jurisdiction: str
+    document_class: str
+    source_family: str
+    url_count: int
+    input_count: int
+    host_counts: dict[str, int]
+    source_list_counts: dict[str, int]
+    suggested_manifest_stem: str
+    suggested_action: str
+    sample_urls: tuple[str, ...]
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "group_key": self.group_key,
+            "jurisdiction": self.jurisdiction,
+            "document_class": self.document_class,
+            "source_family": self.source_family,
+            "url_count": self.url_count,
+            "input_count": self.input_count,
+            "host_counts": self.host_counts,
+            "source_list_counts": self.source_list_counts,
+            "suggested_manifest_stem": self.suggested_manifest_stem,
+            "suggested_action": self.suggested_action,
+            "sample_urls": list(self.sample_urls),
+        }
+
+
+@dataclass(frozen=True)
 class SourceDiscoveryReport:
     generated_at: str
     source_name: str
@@ -121,6 +153,7 @@ class SourceDiscoveryReport:
     release_scope_count: int
     rows: tuple[SourceDiscoveryRow, ...]
     domain_rows: tuple[SourceDiscoveryDomainRow, ...]
+    group_rows: tuple[SourceDiscoveryGroupRow, ...]
 
     @property
     def ready_for_manifest_count(self) -> int:
@@ -150,6 +183,10 @@ class SourceDiscoveryReport:
     def release_scope_present_count(self) -> int:
         return sum(1 for row in self.rows if row.release_scope_present)
 
+    @property
+    def ready_group_count(self) -> int:
+        return len(self.group_rows)
+
     def to_mapping(self) -> dict[str, Any]:
         return {
             "generated_at": self.generated_at,
@@ -161,6 +198,7 @@ class SourceDiscoveryReport:
             "release": self.release_name,
             "release_scope_count": self.release_scope_count,
             "ready_for_manifest_count": self.ready_for_manifest_count,
+            "ready_group_count": self.ready_group_count,
             "needs_review_count": self.needs_review_count,
             "blocked_or_excluded_count": self.blocked_or_excluded_count,
             "release_scope_present_count": self.release_scope_present_count,
@@ -176,6 +214,7 @@ class SourceDiscoveryReport:
             "jurisdiction_counts": _counter_mapping(
                 Counter(row.jurisdiction or "unknown" for row in self.rows)
             ),
+            "group_rows": [row.to_mapping() for row in self.group_rows],
             "domain_rows": [row.to_mapping() for row in self.domain_rows],
             "rows": [row.to_mapping() for row in self.rows],
             "corpus_source_policy": (
@@ -425,6 +464,7 @@ def build_source_discovery_report(
         for canonical_url, items in sorted(grouped.items())
     )
     domain_rows = _build_domain_rows(rows)
+    group_rows = _build_group_rows(rows)
     return SourceDiscoveryReport(
         generated_at=generated_at or datetime.now(UTC).isoformat(),
         source_name=source_name,
@@ -436,6 +476,7 @@ def build_source_discovery_report(
         release_scope_count=len(release_scopes),
         rows=rows,
         domain_rows=domain_rows,
+        group_rows=group_rows,
     )
 
 
@@ -718,6 +759,165 @@ def _build_domain_rows(rows: tuple[SourceDiscoveryRow, ...]) -> tuple[SourceDisc
             ),
         )
     )
+
+
+def _build_group_rows(rows: tuple[SourceDiscoveryRow, ...]) -> tuple[SourceDiscoveryGroupRow, ...]:
+    grouped: dict[tuple[str, str, str], list[SourceDiscoveryRow]] = defaultdict(list)
+    for row in rows:
+        if row.disposition is not DiscoveryDisposition.READY_FOR_MANIFEST:
+            continue
+        if row.release_scope_present or not row.jurisdiction:
+            continue
+        source_family = infer_source_family(row)
+        grouped[(row.jurisdiction, row.document_class, source_family)].append(row)
+
+    group_rows = [
+        _source_discovery_group_row(
+            jurisdiction=jurisdiction,
+            document_class=document_class,
+            source_family=source_family,
+            rows=grouped_rows,
+        )
+        for (jurisdiction, document_class, source_family), grouped_rows in grouped.items()
+    ]
+    return tuple(
+        sorted(
+            group_rows,
+            key=lambda row: (
+                -row.input_count,
+                -row.url_count,
+                row.jurisdiction,
+                row.document_class,
+                row.source_family,
+            ),
+        )
+    )
+
+
+def _source_discovery_group_row(
+    *,
+    jurisdiction: str,
+    document_class: str,
+    source_family: str,
+    rows: list[SourceDiscoveryRow],
+) -> SourceDiscoveryGroupRow:
+    group_key = f"{jurisdiction}/{document_class}/{source_family}"
+    return SourceDiscoveryGroupRow(
+        group_key=group_key,
+        jurisdiction=jurisdiction,
+        document_class=document_class,
+        source_family=source_family,
+        url_count=len(rows),
+        input_count=sum(row.input_count for row in rows),
+        host_counts=_counter_mapping(Counter(row.host for row in rows)),
+        source_list_counts=_counter_mapping(
+            Counter(
+                source_list
+                for row in rows
+                for source_list in row.source_list.split(",")
+                if source_list
+            )
+        ),
+        suggested_manifest_stem=f"{jurisdiction}-{source_family.replace('_', '-')}",
+        suggested_action=_suggested_group_action(document_class, source_family),
+        sample_urls=tuple(
+            row.canonical_url
+            for row in sorted(rows, key=lambda row: (-row.input_count, row.canonical_url))[:5]
+        ),
+    )
+
+
+def infer_source_family(row: SourceDiscoveryRow) -> str:
+    """Return a stable grouping label for ready source-discovery leads."""
+    text = f"{row.host} {row.canonical_url}".lower()
+    if "sua-table" in text or ("utility" in text and "snap" in text):
+        return "snap_utility_allowance_data"
+    if "medicaid" in text and "eligibility-levels" in text:
+        return "medicaid_chip_eligibility_levels"
+    if "tax-parameters" in text:
+        return "federal_tax_parameters"
+    if "poverty-guidelines" in text or "poverty_guidelines" in text:
+        return "poverty_guidelines"
+    if "pir-form" in text:
+        return "head_start_program_information_report"
+    if "child-care" in text or "child_care" in text:
+        return "child_care_subsidy"
+    if row.document_class == DocumentClass.FORM.value:
+        if _looks_like_tax_source(text):
+            if _contains_any(text, ("eitc", "eic", "earned-income")):
+                return "individual_income_tax_eitc_forms"
+            if _contains_any(text, ("property-tax", "property_tax", "homestead", "rent")):
+                return "property_tax_relief_forms"
+            if _contains_any(
+                text,
+                (
+                    "1040",
+                    "ar1000",
+                    "form-140",
+                    "il-1040",
+                    "individual",
+                    "income",
+                    "it540",
+                    "n11",
+                    "pit",
+                ),
+            ):
+                return "individual_income_tax_forms"
+            return "tax_forms"
+        return "official_forms"
+    if row.document_class == DocumentClass.GUIDANCE.value:
+        if "snap" in text:
+            return "snap_guidance"
+        if _looks_like_tax_source(text):
+            return "tax_guidance"
+        return "official_guidance"
+    if row.document_class == DocumentClass.MANUAL.value:
+        return "manuals"
+    return row.document_class
+
+
+def _suggested_group_action(document_class: str, source_family: str) -> str:
+    if source_family == "snap_utility_allowance_data":
+        return "Create a current federal SNAP utility-allowance data manifest from the official workbook."
+    if source_family == "medicaid_chip_eligibility_levels":
+        return "Create a federal Medicaid/CHIP eligibility-levels guidance or data manifest."
+    if source_family == "federal_tax_parameters":
+        return "Create a federal tax-parameter data manifest; prefer workbook-aware extraction."
+    if source_family == "individual_income_tax_forms":
+        return "Manifest the current-year official tax booklet/forms first, then decide whether to add historical years."
+    if source_family == "individual_income_tax_eitc_forms":
+        return "Manifest the current-year official EITC form/instructions with the related return booklet if needed."
+    if source_family == "property_tax_relief_forms":
+        return "Manifest current official property-tax relief forms and instructions as one scope."
+    if document_class == DocumentClass.FORM.value:
+        return "Review the group and create one source-first manifest for the coherent current official form set."
+    if document_class == DocumentClass.GUIDANCE.value:
+        return "Review the group and create one source-first manifest for the coherent official guidance set."
+    return "Review the group and create one source-first manifest when the documents share a policy scope."
+
+
+def _looks_like_tax_source(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "1040",
+            "azdor",
+            "dor.",
+            "mtrevenue",
+            "ncdor",
+            "pit-",
+            "revenue",
+            "tax",
+            "taxation",
+            "taxes",
+            "/dor/",
+            "/drs/",
+        ),
+    )
+
+
+def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in text for needle in needles)
 
 
 def _known_official_host(host: str) -> str | None:
