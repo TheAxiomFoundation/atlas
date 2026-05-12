@@ -1,0 +1,55 @@
+version: "2026-05-12"
+sources:
+  - source_id: us-ca-cdss-mpp-calfresh
+    jurisdiction: us-ca
+    document_class: regulation
+    adapter: california-mpp-calfresh
+    source_url: https://www.cdss.ca.gov/inforesources/Rules-Regulations/Legislation-and-Regulations/CalWORKs-CalFresh-Regulations/CalFresh-Regulations
+    version: "2026-05-12"
+    options:
+      source_as_of: "2026-05-12"
+      expression_date: "2026-05-12"
+      download_dir: ../data/corpus/downloads/us-ca-cdss-mpp-calfresh/2026-05-12
+      request_delay_seconds: 0.25
+      timeout_seconds: 60
+      request_attempts: 3
+      # MVP scope: 5 DOCX files covering encoding-essential sections.
+      # See manifests/us-ca-cdss-mpp-calfresh.yaml for the rationale and
+      # axiom-architecture encoding playbook § 14 for the full inventory.
+      docx_sources:
+        - file: fsman03.docx
+          url: https://www.cdss.ca.gov/Portals/9/Regs/Man/Fsman/fsman03.docx
+          chapter: 63-300
+          sections: ["63-300", "63-301"]
+          summary: Application Process (Chap 63-300)
+        - file: fsman04a.docx
+          url: https://www.cdss.ca.gov/Portals/9/Regs/Man/Fsman/fsman04a.docx
+          chapter: 63-400
+          sections: ["63-401", "63-402", "63-403", "63-404", "63-405"]
+          summary: Eligibility Standards — Citizenship through Resources (Chap 63-400)
+        - file: fsman04b.docx
+          url: https://www.cdss.ca.gov/Portals/9/Regs/Man/Fsman/fsman04b.docx
+          chapter: 63-400
+          sections: ["63-406", "63-407", "63-408", "63-409", "63-410", "63-411"]
+          summary: Eligibility Standards — Income through Work Registration (Chap 63-400)
+        - file: fsman05.docx
+          url: https://www.cdss.ca.gov/Portals/9/Regs/Man/Fsman/fsman05.docx
+          chapter: 63-500
+          sections: ["63-501", "63-502"]
+          summary: Eligibility Determination and Benefit Issuance (Chap 63-500)
+        - file: fsman06.docx
+          url: https://www.cdss.ca.gov/Portals/9/Regs/Man/Fsman/fsman06.docx
+          chapter: 63-500
+          sections: ["63-503"]
+          summary: Allotment Computation (Chap 63-500 Cont)
+    metadata:
+      source_authority: California Department of Social Services (CDSS)
+      source_scope_note: |-
+        Manual of Policies and Procedures, Division 63 (CalFresh Food Stamps).
+        MVP slice: the 5 DOCX files containing encoding-essential sections
+        per axiom-architecture encoding playbook § 14 — eligibility, deductions,
+        resources, eligibility determination, and allotment computation.
+      primary_source: true
+      document_subtype: state_agency_manual
+      program: CalFresh
+      coverage_subset: encoding-essential
