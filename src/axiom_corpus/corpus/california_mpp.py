@@ -39,7 +39,6 @@ import time
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any, Protocol
 
 import requests
 
@@ -100,10 +99,6 @@ class CaliforniaMppExtractReport:
     source_paths: tuple[Path, ...]
 
 
-class _Session(Protocol):
-    def get(self, url: str, timeout: float) -> Any: ...
-
-
 def extract_california_mpp_calfresh(
     store: CorpusArtifactStore,
     *,
@@ -115,7 +110,7 @@ def extract_california_mpp_calfresh(
     request_delay_seconds: float = 0.25,
     timeout_seconds: float = 60.0,
     request_attempts: int = 3,
-    session: _Session | None = None,
+    session: requests.Session | None = None,
 ) -> CaliforniaMppExtractReport:
     """Snapshot CDSS MPP DOCX files and extract CalFresh provisions.
 
@@ -273,7 +268,7 @@ def extract_california_mpp_calfresh(
 
 
 def _fetch_docx(
-    client: _Session,
+    client: requests.Session,
     *,
     url: str,
     timeout: float,
@@ -288,7 +283,7 @@ def _fetch_docx(
     for attempt in range(1, attempts + 1):
         try:
             resp = client.get(url, timeout=timeout)
-            data = resp.content if hasattr(resp, "content") else bytes(resp)  # type: ignore[arg-type]
+            data = resp.content
             if not data:
                 raise ValueError(f"empty body for {url}")
             if cache_path is not None:
