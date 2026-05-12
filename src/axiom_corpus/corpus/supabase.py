@@ -54,6 +54,7 @@ class SupabaseLoadReport:
     existing_id_count: int = 0
     refreshed: bool = False
     refresh_error: str | None = None
+    auto_registered_scopes: tuple[dict[str, object], ...] = ()
 
     def to_mapping(self) -> dict[str, object]:
         return {
@@ -64,6 +65,7 @@ class SupabaseLoadReport:
             "existing_id_count": self.existing_id_count,
             "refreshed": self.refreshed,
             "refresh_error": self.refresh_error,
+            "auto_registered_scopes": [dict(s) for s in self.auto_registered_scopes],
         }
 
 
@@ -384,8 +386,28 @@ def sync_release_scopes_to_supabase(
     refresh: bool = True,
     dry_run: bool = False,
     allow_refresh_failure: bool = False,
+    exclusive: bool = False,
 ) -> SupabaseReleaseScopeSyncReport:
-    """Replace the active Supabase release-scope set for a release manifest."""
+    """Sync the Supabase release-scope set from a release manifest.
+
+    Default behavior (``exclusive=False``) is **upsert-incremental**: each
+    scope in the manifest is upserted (insert-or-update) into
+    ``corpus.release_scopes`` with ``active=true``. Scopes already in the
+    table but NOT in the manifest are left untouched. Safe to run from a
+    feature branch whose manifest is a subset of production state.
+
+    ``exclusive=True`` opts into the older "deactivate all then reinsert"
+    semantics: every existing active row for ``release.name`` is marked
+    inactive first, then the manifest's rows are inserted active. Use only
+    when you specifically want to enforce that the manifest is the complete
+    set of active scopes for the release — typically not what you want from
+    a branch that does not have full coverage of production.
+
+    The historical default was ``exclusive=True``. That behavior caused a
+    silent unpromotion of ``us-wa/regulation`` on 2026-05-12 when a feature
+    branch's manifest was used to sync (the WAC scope existed on a
+    different branch). The new default eliminates this class of regression.
+    """
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
 
@@ -404,11 +426,12 @@ def sync_release_scopes_to_supabase(
         chunk_count = (len(rows) + chunk_size - 1) // chunk_size
 
     if not dry_run:
-        deactivate_release_scope_rows(
-            release_name=release.name,
-            service_key=service_key,
-            rest_url=rest_url,
-        )
+        if exclusive:
+            deactivate_release_scope_rows(
+                release_name=release.name,
+                service_key=service_key,
+                rest_url=rest_url,
+            )
         for chunk in _chunked(iter(rows), chunk_size):
             upsert_release_scope_rows(chunk, service_key=service_key, rest_url=rest_url)
 
@@ -526,8 +549,24 @@ def load_provisions_to_supabase(
     allow_refresh_failure: bool = False,
     preserve_existing_ids: bool = False,
     progress_stream: TextIO | None = None,
+    auto_register_scopes: bool = True,
+    auto_publish: bool = True,
+    release_name: str = "current",
 ) -> SupabaseLoadReport:
-    """Upsert normalized provision records into `corpus.provisions`."""
+    """Upsert normalized provision records into `corpus.provisions`.
+
+    By default, also ensures a row in ``corpus.release_scopes`` exists for
+    each distinct ``(jurisdiction, document_class)`` pair in the loaded
+    records, with ``active=True`` so the data is immediately visible via
+    ``corpus.current_provisions``. This eliminates the silent-invisibility
+    bug class where data was loaded but invisible because nobody added a
+    matching manifest entry.
+
+    Pass ``auto_publish=False`` to stage the load (rows created but
+    invisible — flip later via ``axiom-corpus-ingest publish``). Pass
+    ``auto_register_scopes=False`` to skip release_scopes management
+    entirely (legacy behavior; not recommended).
+    """
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
 
@@ -555,6 +594,23 @@ def load_provisions_to_supabase(
             _record_with_existing_ids(record, existing_ids) for record in materialized_records
         )
 
+    # Track distinct (jurisdiction, doc_type) → version as we stream.
+    # The version field on each row carries the load's version label;
+    # we keep the first non-empty value we see per (jurisdiction, doc_type).
+    scope_versions: dict[tuple[str, str], str] = {}
+
+    def _capture_scope_versions(
+        source: Iterable[ProvisionRecord],
+    ) -> Iterator[ProvisionRecord]:
+        for record in source:
+            key = (record.jurisdiction, record.document_class)
+            if key not in scope_versions:
+                version = record.version or ""
+                scope_versions[key] = version
+            yield record
+
+    records_iter = _capture_scope_versions(records_iter)
+
     rows_loaded = 0
     chunk_count = 0
     rest_url = _rest_url(supabase_url)
@@ -571,6 +627,32 @@ def load_provisions_to_supabase(
                 file=progress_stream,
                 flush=True,
             )
+
+    # Auto-register release_scopes rows after the provisions upsert succeeds.
+    # If any scope has no version (empty string), substitute the synced_at date
+    # so the unique key still works.
+    auto_registered: tuple[dict[str, object], ...] = ()
+    if auto_register_scopes and not dry_run and scope_versions:
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        normalized_versions = {
+            key: version or today for key, version in scope_versions.items()
+        }
+        auto_registered = ensure_release_scopes_for_loaded_data(
+            normalized_versions,
+            release_name=release_name,
+            active=auto_publish,
+            service_key=service_key,
+            rest_url=rest_url,
+        )
+        if progress_stream is not None:
+            state = "published" if auto_publish else "staged (unpublished)"
+            for row in auto_registered:
+                print(
+                    f"auto-registered scope: {row['jurisdiction']}/"
+                    f"{row['document_class']} v{row['version']} → {state}",
+                    file=progress_stream,
+                    flush=True,
+                )
 
     refreshed = False
     refresh_error = None
@@ -591,6 +673,7 @@ def load_provisions_to_supabase(
         existing_id_count=existing_id_count,
         refreshed=refreshed,
         refresh_error=refresh_error,
+        auto_registered_scopes=auto_registered,
     )
 
 
@@ -810,6 +893,179 @@ def upsert_supabase_rows(
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")[:500]
         raise RuntimeError(f"upsert failed {exc.code}: {body}") from exc
+
+
+def set_release_scope_active(
+    *,
+    jurisdiction: str,
+    document_class: str,
+    active: bool,
+    release_name: str = "current",
+    version: str | None = None,
+    service_key: str,
+    supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
+    refresh: bool = True,
+) -> dict[str, object]:
+    """Flip the ``active`` flag on a single release_scopes row.
+
+    If ``version`` is None, picks the most recent row for (release_name,
+    jurisdiction, document_class) by ``synced_at`` descending. Raises if no
+    matching row exists.
+
+    Returns the affected row's contents as a dict, plus the refresh result.
+    """
+    rest_url = _rest_url(supabase_url)
+    auth = {
+        "apikey": service_key,
+        "Authorization": f"Bearer {service_key}",
+        "Accept-Profile": "corpus",
+        "User-Agent": USER_AGENT,
+    }
+
+    if version is None:
+        # Find the most recent row for this (release_name, jurisdiction, doc_class).
+        query = urllib.parse.urlencode({
+            "release_name": f"eq.{release_name}",
+            "jurisdiction": f"eq.{jurisdiction}",
+            "document_class": f"eq.{document_class}",
+            "select": "version,synced_at,active",
+            "order": "synced_at.desc",
+            "limit": 1,
+        })
+        req = urllib.request.Request(
+            f"{rest_url}/release_scopes?{query}",
+            headers=auth,
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            rows = json.loads(resp.read())
+        if not rows:
+            raise RuntimeError(
+                f"no release_scopes row found for "
+                f"({release_name}, {jurisdiction}, {document_class}); "
+                f"load data first or pass --version to disambiguate"
+            )
+        version = rows[0]["version"]
+
+    # PATCH the target row.
+    query = urllib.parse.urlencode({
+        "release_name": f"eq.{release_name}",
+        "jurisdiction": f"eq.{jurisdiction}",
+        "document_class": f"eq.{document_class}",
+        "version": f"eq.{version}",
+    })
+    req = urllib.request.Request(
+        f"{rest_url}/release_scopes?{query}",
+        data=json.dumps({"active": active}).encode(),
+        method="PATCH",
+        headers={
+            **auth,
+            "Content-Type": "application/json",
+            "Content-Profile": "corpus",
+            "Prefer": "return=representation",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        result = json.loads(resp.read())
+    if not result:
+        raise RuntimeError(
+            f"PATCH affected zero rows: ({release_name}, {jurisdiction}, "
+            f"{document_class}, {version})"
+        )
+
+    refreshed = False
+    refresh_error: str | None = None
+    if refresh:
+        try:
+            refresh_corpus_analytics(service_key=service_key, rest_url=rest_url)
+            refreshed = True
+        except (TimeoutError, urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as exc:
+            refresh_error = str(exc)
+
+    return {
+        "scope": result[0],
+        "refreshed": refreshed,
+        "refresh_error": refresh_error,
+    }
+
+
+def list_release_scopes(
+    *,
+    release_name: str = "current",
+    active: bool | None = None,
+    service_key: str,
+    supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
+) -> tuple[dict[str, object], ...]:
+    """List release_scopes rows, optionally filtered by active state."""
+    rest_url = _rest_url(supabase_url)
+    params: dict[str, str] = {
+        "release_name": f"eq.{release_name}",
+        "select": "release_name,jurisdiction,document_class,version,active,synced_at",
+        "order": "jurisdiction.asc,document_class.asc,synced_at.desc",
+    }
+    if active is not None:
+        params["active"] = f"is.{str(active).lower()}"
+
+    req = urllib.request.Request(
+        f"{rest_url}/release_scopes?{urllib.parse.urlencode(params)}",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Accept-Profile": "corpus",
+            "User-Agent": USER_AGENT,
+        },
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        rows = json.loads(resp.read())
+    if not isinstance(rows, list):
+        return ()
+    return tuple(row for row in rows if isinstance(row, dict))
+
+
+def ensure_release_scopes_for_loaded_data(
+    scope_versions: Mapping[tuple[str, str], str],
+    *,
+    release_name: str = "current",
+    active: bool = True,
+    service_key: str,
+    rest_url: str,
+) -> tuple[dict[str, object], ...]:
+    """Idempotently ensure a release_scopes row exists for each loaded scope.
+
+    For each (jurisdiction, document_class) pair in ``scope_versions``,
+    upserts a release_scopes row with the given ``active`` flag. The
+    deterministic upsert key is (release_name, jurisdiction, document_class,
+    version) per the corpus.release_scopes schema constraint.
+
+    Returns a tuple of dicts describing the rows that were written, suitable
+    for inclusion in a load report so operators can see which scopes the
+    load auto-registered (and at what active state).
+
+    This is the load-time companion to ``axiom-corpus-ingest publish`` /
+    ``unpublish``: each load auto-registers its scopes, and operators can
+    later flip ``active`` via the CLI.
+
+    Default ``active=True`` matches the design choice that loading data
+    should publish it by default (the "fail open" choice — forgetting to
+    promote no longer hides data). Callers wanting to stage a load
+    explicitly should pass ``active=False``.
+    """
+    if not scope_versions:
+        return ()
+
+    synced_at = datetime.now(UTC).isoformat()
+    rows = [
+        {
+            "release_name": release_name,
+            "jurisdiction": jurisdiction,
+            "document_class": document_class,
+            "version": version,
+            "active": active,
+            "synced_at": synced_at,
+        }
+        for (jurisdiction, document_class), version in sorted(scope_versions.items())
+    ]
+    upsert_release_scope_rows(rows, service_key=service_key, rest_url=rest_url)
+    return tuple(rows)
 
 
 def deactivate_release_scope_rows(

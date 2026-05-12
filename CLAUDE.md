@@ -66,10 +66,47 @@ uv run axiom-corpus-ingest sync-r2 \
   --apply
 
 # Load normalized provisions into Supabase
+# By default, auto-registers a release_scopes row with active=true so the
+# data is immediately visible in corpus.current_provisions. Pass --stage
+# to load with active=false (staged but invisible); promote later with
+# `axiom-corpus-ingest publish`.
 uv run axiom-corpus-ingest load-supabase \
   --provisions data/corpus/provisions/<scope>/<version>.jsonl \
   --preserve-existing-ids
+
+# Flip visibility for a previously loaded scope
+uv run axiom-corpus-ingest publish \
+  --jurisdiction us-ms --doc-type statute
+
+# Reverse (mark a scope inactive)
+uv run axiom-corpus-ingest unpublish \
+  --jurisdiction us-ms --doc-type statute
+
+# Find scopes that are loaded but not visible
+uv run axiom-corpus-ingest list-unpublished
+
+# Check that every navigation_nodes scope has matching current_provisions
+uv run axiom-corpus-ingest verify-release-coverage
 ```
+
+## Release-scopes visibility model
+
+`corpus.current_provisions` is a view filtered by `corpus.release_scopes`.
+Rows in `corpus.provisions` are visible to the app only if a matching row
+in `corpus.release_scopes` has `active = true`.
+
+As of the 2026-05-12 auto-register refactor:
+
+- `load-supabase` auto-inserts a `release_scopes` row per loaded
+  (jurisdiction, document_class) with `active = true` by default. Forgetting
+  is no longer the failure mode that silently hides data.
+- `--stage` loads with `active = false`; promote with `publish`.
+- `--no-auto-register` skips the release_scopes write entirely (legacy
+  workflow; not recommended for new loads).
+- `sync-release-scopes` is upsert-incremental by default (changed from
+  destructive-replace 2026-05-12). Pass `--exclusive` for the older
+  deactivate-all-then-reinsert behavior — but only when you are certain
+  the manifest is the complete set of intended active scopes.
 
 ## Repo Boundaries
 
