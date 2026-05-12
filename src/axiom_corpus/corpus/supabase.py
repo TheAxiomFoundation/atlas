@@ -103,6 +103,205 @@ class SupabaseReleaseScopeSyncReport:
         }
 
 
+@dataclass(frozen=True)
+class ReleaseCoverageFinding:
+    """A jurisdiction × document_class with navigation rows but no current provisions."""
+
+    jurisdiction: str
+    document_class: str
+    navigation_node_count: int
+    current_provision_count: int
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "jurisdiction": self.jurisdiction,
+            "document_class": self.document_class,
+            "navigation_node_count": self.navigation_node_count,
+            "current_provision_count": self.current_provision_count,
+        }
+
+
+@dataclass(frozen=True)
+class ReleaseCoverageReport:
+    """Result of verifying the navigation → current_provisions join.
+
+    The view ``corpus.current_provisions`` exists if and only if there is a
+    matching row in ``corpus.release_scopes`` (release_name='current',
+    active=true). A jurisdiction with navigation rows but no matching release
+    scope row produces ``current_provision_count == 0`` here — the historical
+    UK failure mode that left rows unreachable to consumers.
+    """
+
+    checked_at: str
+    missing_current_provisions: tuple[ReleaseCoverageFinding, ...]
+
+    @property
+    def ok(self) -> bool:
+        return not self.missing_current_provisions
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "ok": self.ok,
+            "checked_at": self.checked_at,
+            "missing_current_provisions": [
+                f.to_mapping() for f in self.missing_current_provisions
+            ],
+        }
+
+
+def verify_release_coverage(
+    *,
+    service_key: str,
+    supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
+) -> ReleaseCoverageReport:
+    """Check the invariant: any jurisdiction with navigation rows must also
+    have rows in ``corpus.current_provisions``.
+
+    Reads two PostgREST views:
+      * ``navigation_node_counts`` — per (jurisdiction, doc_type) row counts
+        derived from corpus.navigation_nodes
+      * ``current_provision_counts`` — per (jurisdiction, document_class)
+        row counts from corpus.current_provisions
+
+    Reports any (jurisdiction, doc_type) pair where navigation has rows and
+    current_provisions has zero. The historical UK regression (4,705 nav rows,
+    0 current_provisions) is exactly this shape.
+    """
+    rest_url = _rest_url(supabase_url)
+    headers = {
+        "apikey": service_key,
+        "Authorization": f"Bearer {service_key}",
+        "Accept": "application/json",
+        "Accept-Profile": "corpus",
+        "User-Agent": USER_AGENT,
+    }
+
+    nav_counts = _fetch_navigation_node_counts(rest_url, headers)
+    current_counts = _fetch_current_provision_counts(rest_url, headers)
+    current_keys = {
+        (row["jurisdiction"], row["document_class"]) for row in current_counts
+    }
+
+    missing: list[ReleaseCoverageFinding] = []
+    for nav in nav_counts:
+        jurisdiction = str(nav["jurisdiction"])
+        document_class = str(nav["document_class"])
+        count_value = nav["count"]
+        count = int(count_value) if isinstance(count_value, int | str) else 0
+        if count > 0 and (jurisdiction, document_class) not in current_keys:
+            missing.append(
+                ReleaseCoverageFinding(
+                    jurisdiction=jurisdiction,
+                    document_class=document_class,
+                    navigation_node_count=count,
+                    current_provision_count=0,
+                )
+            )
+
+    return ReleaseCoverageReport(
+        checked_at=datetime.now(UTC).isoformat(),
+        missing_current_provisions=tuple(sorted(
+            missing, key=lambda f: (f.jurisdiction, f.document_class)
+        )),
+    )
+
+
+def _fetch_navigation_node_counts(
+    rest_url: str, headers: dict[str, str]
+) -> tuple[dict[str, object], ...]:
+    # PostgREST aggregation: GROUP BY jurisdiction, doc_type with count.
+    # Falls back to streaming the table if the aggregate endpoint is denied.
+    query = urllib.parse.urlencode({
+        "select": "jurisdiction,doc_type,count",
+        "order": "jurisdiction.asc,doc_type.asc",
+    })
+    req = urllib.request.Request(
+        f"{rest_url}/navigation_nodes?{query}",
+        headers={**headers, "Range-Unit": "items"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            rows = json.loads(resp.read())
+    except urllib.error.HTTPError:
+        # If the aggregate endpoint isn't enabled, fall back to a streaming
+        # scan that counts client-side.
+        return _stream_navigation_node_counts(rest_url, headers)
+    if not isinstance(rows, list):
+        return ()
+    out: list[dict[str, object]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        out.append({
+            "jurisdiction": str(row.get("jurisdiction") or ""),
+            "document_class": str(row.get("doc_type") or "unknown"),
+            "count": int(row.get("count") or 0),
+        })
+    return tuple(out)
+
+
+def _stream_navigation_node_counts(
+    rest_url: str, headers: dict[str, str]
+) -> tuple[dict[str, object], ...]:
+    counts: dict[tuple[str, str], int] = {}
+    offset = 0
+    chunk = 5000
+    while True:
+        query = urllib.parse.urlencode({
+            "select": "jurisdiction,doc_type",
+            "offset": offset,
+            "limit": chunk,
+        })
+        req = urllib.request.Request(
+            f"{rest_url}/navigation_nodes?{query}",
+            headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            rows = json.loads(resp.read())
+        if not isinstance(rows, list) or not rows:
+            break
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            key = (
+                str(row.get("jurisdiction") or ""),
+                str(row.get("doc_type") or "unknown"),
+            )
+            counts[key] = counts.get(key, 0) + 1
+        if len(rows) < chunk:
+            break
+        offset += chunk
+    return tuple(
+        {"jurisdiction": j, "document_class": d, "count": c}
+        for (j, d), c in sorted(counts.items())
+    )
+
+
+def _fetch_current_provision_counts(
+    rest_url: str, headers: dict[str, str]
+) -> tuple[dict[str, object], ...]:
+    query = urllib.parse.urlencode({
+        "select": "jurisdiction,document_class,provision_count",
+    })
+    req = urllib.request.Request(
+        f"{rest_url}/current_provision_counts?{query}",
+        headers=headers,
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        rows = json.loads(resp.read())
+    if not isinstance(rows, list):
+        return ()
+    return tuple(
+        {
+            "jurisdiction": str(row.get("jurisdiction") or ""),
+            "document_class": str(row.get("document_class") or "unknown"),
+            "count": int(row.get("provision_count") or 0),
+        }
+        for row in rows
+        if isinstance(row, dict)
+    )
+
+
 def deterministic_provision_id(citation_path: str) -> str:
     """Return the stable UUID used by existing `corpus.provisions` ingests."""
     return str(uuid5(NAMESPACE_URL, f"axiom:{citation_path}"))

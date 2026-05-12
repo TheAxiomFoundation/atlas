@@ -169,6 +169,7 @@ from axiom_corpus.corpus.supabase import (
     load_provisions_to_supabase,
     resolve_service_key,
     sync_release_scopes_to_supabase,
+    verify_release_coverage,
     write_supabase_rows_jsonl,
 )
 from axiom_corpus.corpus.usc import (
@@ -412,6 +413,20 @@ def _cmd_sync_release_scopes(args: argparse.Namespace) -> int:
     payload["release_path"] = str(release_path)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
+
+
+def _cmd_verify_release_coverage(args: argparse.Namespace) -> int:
+    service_key = resolve_service_key(
+        args.supabase_url,
+        service_key_env=args.service_key_env,
+        access_token_env=args.access_token_env,
+    )
+    report = verify_release_coverage(
+        service_key=service_key,
+        supabase_url=args.supabase_url,
+    )
+    print(json.dumps(report.to_mapping(), indent=2, sort_keys=True))
+    return 0 if report.ok else 2
 
 
 def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
@@ -4031,6 +4046,28 @@ def build_parser() -> argparse.ArgumentParser:
     sync_release_scopes.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
     sync_release_scopes.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
     sync_release_scopes.set_defaults(func=_cmd_sync_release_scopes)
+
+    verify_release_coverage_cmd = sub.add_parser(
+        "verify-release-coverage",
+        help=(
+            "Check that every jurisdiction × document_class with navigation "
+            "rows also has rows in corpus.current_provisions. Exits non-zero "
+            "if any jurisdiction is missing — the historical UK regression "
+            "(rows in corpus.provisions and navigation_nodes but zero in "
+            "current_provisions because release_scopes had no matching row)."
+        ),
+    )
+    verify_release_coverage_cmd.add_argument(
+        "--supabase-url",
+        default=os.environ.get("AXIOM_SUPABASE_URL", DEFAULT_AXIOM_SUPABASE_URL),
+    )
+    verify_release_coverage_cmd.add_argument(
+        "--service-key-env", default=DEFAULT_SERVICE_KEY_ENV
+    )
+    verify_release_coverage_cmd.add_argument(
+        "--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV
+    )
+    verify_release_coverage_cmd.set_defaults(func=_cmd_verify_release_coverage)
 
     analytics = sub.add_parser(
         "analytics",
