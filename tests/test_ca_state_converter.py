@@ -183,7 +183,7 @@ class TestCAStateConverter:
         converter = CAStateConverter()
         statute = converter._parse_html(SAMPLE_SECTION_HTML, "RTC", "17052", "https://example.com")
 
-        assert statute.rulespec_path == "rulespec-us-ca/statute/RTC/17052.yaml"
+        assert statute.rulespec_path == "rulespec-us-ca/statutes/RTC/17052.yaml"
 
     def test_list_codes(self):
         """List available California codes."""

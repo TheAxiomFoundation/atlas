@@ -106,7 +106,10 @@ from axiom_corpus.corpus.state_adapters.nevada import (
     extract_nevada_nrs,
 )
 from axiom_corpus.corpus.state_adapters.new_hampshire import extract_new_hampshire_rsa
-from axiom_corpus.corpus.state_adapters.new_jersey import extract_new_jersey_statutes
+from axiom_corpus.corpus.state_adapters.new_jersey import (
+    NEW_JERSEY_STATUTES_ZIP_URL,
+    extract_new_jersey_statutes,
+)
 from axiom_corpus.corpus.state_adapters.new_mexico import extract_new_mexico_statutes
 from axiom_corpus.corpus.state_adapters.new_york import (
     extract_new_york_consolidated_laws,
@@ -1996,7 +1999,9 @@ def _extract_state_statute_source(
             version=version,
             source_dir=_optional_manifest_path(manifest_path, options, "source_dir"),
             source_zip=_optional_manifest_path(manifest_path, options, "source_zip"),
-            source_url=source.source_url,
+            source_url=_optional_text(options.get("source_url"))
+            or source.source_url
+            or NEW_JERSEY_STATUTES_ZIP_URL,
             source_as_of=source_as_of,
             expression_date=expression_date,
             only_title=only_title,

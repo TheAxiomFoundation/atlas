@@ -63,6 +63,11 @@
       "version": "2026-05-11-cdss-acl-2024"
     },
     {
+      "document_class": "form",
+      "jurisdiction": "us-ca",
+      "version": "2026-05-11-ftb-2024-tax-instructions"
+    },
+    {
       "document_class": "regulation",
       "jurisdiction": "us-co",
       "version": "2026-04-29"
