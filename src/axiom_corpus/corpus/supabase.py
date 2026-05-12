@@ -209,23 +209,22 @@ def verify_release_coverage(
 def _fetch_navigation_node_counts(
     rest_url: str, headers: dict[str, str]
 ) -> tuple[dict[str, object], ...]:
-    # PostgREST aggregation: GROUP BY jurisdiction, doc_type with count.
-    # Falls back to streaming the table if the aggregate endpoint is denied.
-    query = urllib.parse.urlencode({
-        "select": "jurisdiction,doc_type,count",
-        "order": "jurisdiction.asc,doc_type.asc",
-    })
+    """Get GROUP BY (jurisdiction, doc_type) counts via the corpus RPC.
+
+    We do this server-side because corpus.navigation_nodes is ~2.4M rows
+    and PostgREST caps responses at 1000 — paginating the whole table
+    would take thousands of round trips. The RPC
+    ``corpus.get_navigation_node_counts`` returns ~70 rows in one call.
+    See migration 20260512170000_navigation_node_counts_rpc.sql.
+    """
     req = urllib.request.Request(
-        f"{rest_url}/navigation_nodes?{query}",
-        headers={**headers, "Range-Unit": "items"},
+        f"{rest_url}/rpc/get_navigation_node_counts",
+        data=b"{}",
+        method="POST",
+        headers={**headers, "Content-Type": "application/json"},
     )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            rows = json.loads(resp.read())
-    except urllib.error.HTTPError:
-        # If the aggregate endpoint isn't enabled, fall back to a streaming
-        # scan that counts client-side.
-        return _stream_navigation_node_counts(rest_url, headers)
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        rows = json.loads(resp.read())
     if not isinstance(rows, list):
         return ()
     out: list[dict[str, object]] = []
@@ -234,47 +233,10 @@ def _fetch_navigation_node_counts(
             continue
         out.append({
             "jurisdiction": str(row.get("jurisdiction") or ""),
-            "document_class": str(row.get("doc_type") or "unknown"),
-            "count": int(row.get("count") or 0),
+            "document_class": str(row.get("document_class") or "unknown"),
+            "count": int(row.get("node_count") or 0),
         })
     return tuple(out)
-
-
-def _stream_navigation_node_counts(
-    rest_url: str, headers: dict[str, str]
-) -> tuple[dict[str, object], ...]:
-    counts: dict[tuple[str, str], int] = {}
-    offset = 0
-    chunk = 5000
-    while True:
-        query = urllib.parse.urlencode({
-            "select": "jurisdiction,doc_type",
-            "offset": offset,
-            "limit": chunk,
-        })
-        req = urllib.request.Request(
-            f"{rest_url}/navigation_nodes?{query}",
-            headers=headers,
-        )
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            rows = json.loads(resp.read())
-        if not isinstance(rows, list) or not rows:
-            break
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            key = (
-                str(row.get("jurisdiction") or ""),
-                str(row.get("doc_type") or "unknown"),
-            )
-            counts[key] = counts.get(key, 0) + 1
-        if len(rows) < chunk:
-            break
-        offset += chunk
-    return tuple(
-        {"jurisdiction": j, "document_class": d, "count": c}
-        for (j, d), c in sorted(counts.items())
-    )
 
 
 def _fetch_current_provision_counts(
