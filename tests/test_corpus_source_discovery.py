@@ -61,6 +61,14 @@ def test_source_discovery_classifies_static_external_urls(tmp_path):
     assert payload["blocked_or_excluded_count"] == 2
     assert payload["release_scope_present_count"] == 1
     assert payload["source_status_counts"]["primary_official"] == 3
+    assert payload["ready_group_count"] == 2
+    assert [row["group_key"] for row in payload["group_rows"]] == [
+        "us/form/individual_income_tax_forms",
+        "us/guidance/poverty_guidelines",
+    ]
+    assert payload["group_rows"][0]["suggested_manifest_stem"] == (
+        "us-individual-income-tax-forms"
+    )
 
 
 def test_source_discovery_cli_writes_report(tmp_path, capsys):
@@ -87,5 +95,7 @@ def test_source_discovery_cli_writes_report(tmp_path, capsys):
     assert exit_code == 0
     assert printed["written_to"] == str(output)
     assert written["unique_url_count"] == 1
+    assert written["ready_group_count"] == 1
+    assert written["group_rows"][0]["group_key"] == "us-co/statute/statute"
     assert written["rows"][0]["jurisdiction"] == "us-co"
     assert written["rows"][0]["disposition"] == "ready_for_manifest"
