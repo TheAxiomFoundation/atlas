@@ -1,0 +1,17 @@
+documents:
+  - source_id: cms-medicaid-chip-bhp-eligibility-levels
+    jurisdiction: us
+    document_class: form
+    citation_path: us/form/cms/medicaid-chip-bhp-eligibility-levels
+    title: Medicaid, CHIP, and BHP Eligibility Levels
+    source_url: https://www.medicaid.gov/medicaid/national-medicaid-chip-program-information/medicaid-childrens-health-insurance-program-basic-health-program-eligibility-levels
+    source_format: html
+    source_as_of: "2026-05-12"
+    expression_date: "2026-05-12"
+    metadata:
+      primary_source: true
+      source_authority: Centers for Medicare & Medicaid Services
+      document_subtype: eligibility_levels_table
+      program: medicaid_chip_bhp
+      source_decisions_as_of: "2023-12-01"
+      discovered_via: policyengine-us:federal_references

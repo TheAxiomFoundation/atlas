@@ -8,6 +8,7 @@ reviewing before creating source-first manifests.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -433,6 +434,7 @@ def build_source_discovery_report(
     input_paths: tuple[str | Path, ...],
     *,
     release: ReleaseManifest | None = None,
+    covered_source_urls: Iterable[str] | None = None,
     source_name: str = "policyengine-us",
     generated_at: str | None = None,
 ) -> SourceDiscoveryReport:
@@ -459,8 +461,18 @@ def build_source_discovery_report(
         if release is not None
         else set()
     )
+    covered_canonical_urls = (
+        _covered_canonical_url_keys(covered_source_urls)
+        if covered_source_urls is not None
+        else None
+    )
     rows = tuple(
-        _build_row(canonical_url, items, release_scopes=release_scopes)
+        _build_row(
+            canonical_url,
+            items,
+            release_scopes=release_scopes,
+            covered_canonical_urls=covered_canonical_urls,
+        )
         for canonical_url, items in sorted(grouped.items())
     )
     domain_rows = _build_domain_rows(rows)
@@ -530,6 +542,44 @@ def canonicalize_url(raw_url: str) -> CanonicalUrl | None:
     )
 
 
+def _covered_canonical_url_keys(urls: Iterable[str]) -> frozenset[str]:
+    keys: set[str] = set()
+    for url in urls:
+        canonical = canonicalize_url(url)
+        if canonical is None:
+            continue
+        keys.update(_canonical_url_equivalents(canonical.canonical_url))
+    return frozenset(keys)
+
+
+def _canonical_url_equivalents(canonical_url: str) -> tuple[str, ...]:
+    """Return conservative URL variants that commonly identify the same page."""
+
+    split = urlsplit(canonical_url)
+    path = split.path or "/"
+    variants = {canonical_url}
+    if path not in {"", "/"}:
+        name = path.rsplit("/", 1)[-1]
+        if path.endswith("/index.html"):
+            base_path = path.removesuffix("/index.html") or "/"
+            variants.add(
+                urlunsplit((split.scheme, split.netloc, base_path, split.query, ""))
+            )
+        elif "." not in name:
+            variants.add(
+                urlunsplit(
+                    (
+                        split.scheme,
+                        split.netloc,
+                        f"{path.rstrip('/')}/index.html",
+                        split.query,
+                        "",
+                    )
+                )
+            )
+    return tuple(sorted(variants))
+
+
 def _normalize_query(query: str) -> str:
     pairs = []
     for key, value in parse_qsl(query, keep_blank_values=True):
@@ -552,6 +602,7 @@ def _build_row(
     items: list[_InputUrl],
     *,
     release_scopes: set[tuple[str, str]],
+    covered_canonical_urls: frozenset[str] | None,
 ) -> SourceDiscoveryRow:
     canonical = items[0].canonical
     host = canonical.host
@@ -559,7 +610,9 @@ def _build_row(
     document_class = infer_document_class(canonical_url, host)
     jurisdiction = infer_jurisdiction(host, canonical_url)
     release_scope_present = (
-        jurisdiction is not None and (jurisdiction, document_class) in release_scopes
+        canonical_url in covered_canonical_urls
+        if covered_canonical_urls is not None
+        else jurisdiction is not None and (jurisdiction, document_class) in release_scopes
     )
     disposition, reason = _disposition_and_reason(
         source_status=source_status,

@@ -99,3 +99,72 @@ def test_source_discovery_cli_writes_report(tmp_path, capsys):
     assert written["group_rows"][0]["group_key"] == "us-co/statute/statute"
     assert written["rows"][0]["jurisdiction"] == "us-co"
     assert written["rows"][0]["disposition"] == "ready_for_manifest"
+
+
+def test_source_discovery_cli_uses_inventory_urls_for_release_coverage(tmp_path, capsys):
+    source = tmp_path / "federal_references.txt"
+    medicaid_url = (
+        "https://www.medicaid.gov/medicaid/national-medicaid-chip-program-information/"
+        "medicaid-childrens-health-insurance-program-basic-health-program-eligibility-levels"
+    )
+    source.write_text(
+        "\n".join(
+            [
+                f"{medicaid_url}/index.html",
+                "https://www.cbo.gov/system/files/2025-01/53724-2025-01-Tax-Parameters.xlsx",
+            ]
+        )
+    )
+    release_path = tmp_path / "releases" / "current.json"
+    release_path.parent.mkdir(parents=True)
+    release_path.write_text(
+        json.dumps(
+            {
+                "name": "current",
+                "scopes": [
+                    {
+                        "jurisdiction": "us",
+                        "document_class": "form",
+                        "version": "covered-form",
+                    }
+                ],
+            }
+        )
+    )
+    inventory_path = tmp_path / "inventory" / "us" / "form" / "covered-form.json"
+    inventory_path.parent.mkdir(parents=True)
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "citation_path": "us/form/cms/medicaid-chip-bhp-eligibility-levels",
+                        "source_url": medicaid_url,
+                    }
+                ]
+            }
+        )
+    )
+    output = tmp_path / "analytics" / "source-discovery-current.json"
+
+    exit_code = main(
+        [
+            "source-discovery",
+            "--base",
+            str(tmp_path),
+            "--input",
+            str(source),
+            "--output",
+            str(output),
+        ]
+    )
+    capsys.readouterr()
+    written = json.loads(output.read_text())
+    rows = {row["host"]: row for row in written["rows"]}
+    group_keys = {row["group_key"] for row in written["group_rows"]}
+
+    assert exit_code == 0
+    assert rows["medicaid.gov"]["release_scope_present"] is True
+    assert rows["cbo.gov"]["release_scope_present"] is False
+    assert "us/form/federal_tax_parameters" in group_keys
+    assert "us/form/medicaid_chip_eligibility_levels" not in group_keys

@@ -23,6 +23,11 @@
       "version": "2026-05-11-hhs-poverty-guidelines"
     },
     {
+      "document_class": "form",
+      "jurisdiction": "us",
+      "version": "2026-05-12-medicaid-chip-bhp-eligibility-levels"
+    },
+    {
       "document_class": "statute",
       "jurisdiction": "us",
       "version": "2026-04-29"

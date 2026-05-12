@@ -3197,12 +3197,18 @@ def _cmd_regulation_completion(args: argparse.Namespace) -> int:
 def _cmd_source_discovery(args: argparse.Namespace) -> int:
     release = None
     release_path = None
+    covered_source_urls = None
     if args.release:
         release_path = resolve_release_manifest_path(args.base, args.release)
         release = ReleaseManifest.load(release_path)
+        covered_source_urls = _release_inventory_source_urls(
+            CorpusArtifactStore(args.base),
+            release,
+        )
     report = build_source_discovery_report(
         tuple(args.input),
         release=release,
+        covered_source_urls=covered_source_urls,
         source_name=args.source_name,
     )
     payload = report.to_mapping()
@@ -3214,6 +3220,32 @@ def _cmd_source_discovery(args: argparse.Namespace) -> int:
         payload["written_to"] = str(args.output)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
+
+
+def _release_inventory_source_urls(
+    store: CorpusArtifactStore,
+    release: ReleaseManifest,
+) -> tuple[str, ...]:
+    """Collect official source URLs that have already been materialized."""
+
+    urls: set[str] = set()
+    for scope in release.scopes:
+        inventory_path = store.inventory_path(
+            scope.jurisdiction,
+            scope.document_class,
+            scope.version,
+        )
+        if not inventory_path.exists():
+            continue
+        for item in load_source_inventory(inventory_path):
+            if item.source_url:
+                urls.add(item.source_url)
+            metadata = item.metadata or {}
+            for key in ("download_url", "final_url", "source_url"):
+                value = metadata.get(key)
+                if isinstance(value, str) and value:
+                    urls.add(value)
+    return tuple(sorted(urls))
 
 
 def _resolve_state_source_access_queue(base: Path, value: Path | None) -> Path | None:
