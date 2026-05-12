@@ -1,0 +1,69 @@
+documents:
+  - source_id: ca-cdss-acl-2024-24-36
+    jurisdiction: us-ca
+    document_class: guidance
+    citation_path: us-ca/guidance/cdss/acl-2024-24-36
+    title: CDSS All County Letter No. 24-36
+    source_url: https://cdss.ca.gov/Portals/9/Additional-Resources/Letters-and-Notices/ACLs/2024/24-36.pdf?ver=2024-05-31-153125-453
+    source_format: pdf
+    source_as_of: "2024-05-31"
+    expression_date: "2024-05-31"
+    metadata:
+      primary_source: true
+      source_authority: California Department of Social Services
+      document_subtype: all_county_letter
+      document_number: ACL 24-36
+      program: CalWORKs
+      topic: vehicle_value_limit
+      discovered_via: policyengine-us:state_references
+  - source_id: ca-cdss-acl-2024-24-54
+    jurisdiction: us-ca
+    document_class: guidance
+    citation_path: us-ca/guidance/cdss/acl-2024-24-54
+    title: CDSS All County Letter No. 24-54
+    source_url: https://cdss.ca.gov/Portals/9/Additional-Resources/Letters-and-Notices/ACLs/2024/24-54.pdf?ver=2024-08-02-081116-287
+    source_format: pdf
+    source_as_of: "2024-08-02"
+    expression_date: "2024-08-02"
+    metadata:
+      primary_source: true
+      source_authority: California Department of Social Services
+      document_subtype: all_county_letter
+      document_number: ACL 24-54
+      program: CalWORKs
+      topic: maximum_resource_limit
+      discovered_via: policyengine-us:state_references
+  - source_id: ca-cdss-acl-2024-24-55
+    jurisdiction: us-ca
+    document_class: guidance
+    citation_path: us-ca/guidance/cdss/acl-2024-24-55
+    title: CDSS All County Letter No. 24-55
+    source_url: https://cdss.ca.gov/Portals/9/Additional-Resources/Letters-and-Notices/ACLs/2024/24-55.pdf?ver=2024-08-19-162608-673
+    source_format: pdf
+    source_as_of: "2024-08-08"
+    expression_date: "2024-08-08"
+    metadata:
+      primary_source: true
+      source_authority: California Department of Social Services
+      document_subtype: all_county_letter
+      document_number: ACL 24-55
+      program: CalWORKs
+      topic: maximum_aid_payment
+      discovered_via: policyengine-us:state_references
+  - source_id: ca-cdss-acl-2024-24-59
+    jurisdiction: us-ca
+    document_class: guidance
+    citation_path: us-ca/guidance/cdss/acl-2024-24-59
+    title: CDSS All County Letter No. 24-59
+    source_url: https://cdss.ca.gov/Portals/9/Additional-Resources/Letters-and-Notices/ACLs/2024/24-59.pdf?ver=2024-08-19-094023-573
+    source_format: pdf
+    source_as_of: "2024-08-16"
+    expression_date: "2024-08-16"
+    metadata:
+      primary_source: true
+      source_authority: California Department of Social Services
+      document_subtype: all_county_letter
+      document_number: ACL 24-59
+      program: CalFresh
+      topic: standard_medical_deduction
+      discovered_via: policyengine-us:federal_references

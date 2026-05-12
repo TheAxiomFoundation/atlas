@@ -1,0 +1,16 @@
+documents:
+  - source_id: dc-osse-child-care-subsidy-policy-manual
+    jurisdiction: us-dc
+    document_class: manual
+    citation_path: us-dc/manual/osse/child-care-subsidy-policy-manual
+    title: DC Child Care Subsidy Program Policy Manual
+    source_url: https://osse.dc.gov/sites/default/files/dc/sites/osse/publication/attachments/DC%20Child%20Care%20Subsidy%20Program%20Policy%20Manual.pdf
+    source_format: pdf
+    source_as_of: "2026-05-11"
+    expression_date: "2026-05-11"
+    metadata:
+      primary_source: true
+      source_authority: District of Columbia Office of the State Superintendent of Education
+      document_subtype: policy_manual
+      program: child_care_subsidy
+      discovered_via: policyengine-us:state_references

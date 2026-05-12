@@ -1,0 +1,52 @@
+documents:
+  - source_id: ca-ftb-2024-540-booklet
+    jurisdiction: us-ca
+    document_class: form
+    citation_path: us-ca/form/ftb/2024/540-booklet
+    title: 2024 Personal Income Tax Booklet
+    source_url: https://ftb.ca.gov/forms/2024/2024-540-booklet.html
+    source_format: html
+    source_as_of: "2026-05-11"
+    expression_date: "2026-05-11"
+    metadata:
+      primary_source: true
+      source_authority: California Franchise Tax Board
+      document_subtype: tax_form_instructions
+      form: "540"
+      program: individual_income_tax
+      tax_year: "2024"
+      discovered_via: policyengine-us:state_references
+  - source_id: ca-ftb-2024-540-ca-instructions
+    jurisdiction: us-ca
+    document_class: form
+    citation_path: us-ca/form/ftb/2024/schedule-ca-540-instructions
+    title: 2024 Instructions for Schedule CA 540
+    source_url: https://ftb.ca.gov/forms/2024/2024-540-ca-instructions.html
+    source_format: html
+    source_as_of: "2026-05-11"
+    expression_date: "2026-05-11"
+    metadata:
+      primary_source: true
+      source_authority: California Franchise Tax Board
+      document_subtype: tax_form_instructions
+      form: "Schedule CA (540)"
+      program: individual_income_tax
+      tax_year: "2024"
+      discovered_via: policyengine-us:state_references
+  - source_id: ca-ftb-2024-540-p-instructions
+    jurisdiction: us-ca
+    document_class: form
+    citation_path: us-ca/form/ftb/2024/schedule-p-540-instructions
+    title: 2024 Instructions for Schedule P 540
+    source_url: https://ftb.ca.gov/forms/2024/2024-540-p-instructions.html
+    source_format: html
+    source_as_of: "2026-05-11"
+    expression_date: "2026-05-11"
+    metadata:
+      primary_source: true
+      source_authority: California Franchise Tax Board
+      document_subtype: tax_form_instructions
+      form: "Schedule P (540)"
+      program: individual_income_tax
+      tax_year: "2024"
+      discovered_via: policyengine-us:state_references

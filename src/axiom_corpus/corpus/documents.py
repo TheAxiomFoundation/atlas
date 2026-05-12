@@ -21,8 +21,8 @@ from axiom_corpus.corpus.models import DocumentClass, ProvisionRecord, SourceInv
 from axiom_corpus.corpus.supabase import deterministic_provision_id
 
 OFFICIAL_DOCUMENT_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/123.0 Safari/537.36 axiom-corpus/0.1"
+    "Axiom/1.0 (Legal Archive; contact@axiom-foundation.org) "
+    "https://github.com/TheAxiomFoundation/axiom-corpus"
 )
 _GOOGLE_DRIVE_FILE_RE = re.compile(r"https?://drive\.google\.com/file/d/([^/]+)/")
 _HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}

@@ -1,0 +1,33 @@
+documents:
+  - source_id: ia-dor-iowa-taxable-income
+    jurisdiction: us-ia
+    document_class: guidance
+    citation_path: us-ia/guidance/revenue/individual-income-tax/iowa-taxable-income
+    title: Line 04 Iowa Taxable Income
+    source_url: https://revenue.iowa.gov/taxes/tax-guidance/individual-income-tax/1040-expanded-instructions/iowa-taxable-income
+    source_format: html
+    source_as_of: "2026-05-11"
+    expression_date: "2026-05-11"
+    metadata:
+      primary_source: true
+      source_authority: Iowa Department of Revenue
+      document_subtype: tax_guidance
+      program: individual_income_tax
+      topic: iowa_taxable_income
+      discovered_via: policyengine-us:state_references
+  - source_id: ia-dor-retirement-income-tax-guidance
+    jurisdiction: us-ia
+    document_class: guidance
+    citation_path: us-ia/guidance/revenue/individual-income-tax/retirement-income
+    title: Retirement Income Tax Guidance
+    source_url: https://revenue.iowa.gov/retirement-income-tax-guidance
+    source_format: html
+    source_as_of: "2026-05-11"
+    expression_date: "2026-05-11"
+    metadata:
+      primary_source: true
+      source_authority: Iowa Department of Revenue
+      document_subtype: tax_guidance
+      program: individual_income_tax
+      topic: retirement_income
+      discovered_via: policyengine-us:state_references
