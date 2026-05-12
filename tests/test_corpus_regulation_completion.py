@@ -16,6 +16,12 @@ def test_regulation_completion_classifies_federal_state_legacy_and_missing(tmp_p
     store = CorpusArtifactStore(tmp_path / "corpus")
     _write_complete_regulation_scope(store, "us", "2026-05-01", count=2)
     _write_complete_regulation_scope(store, "us-co", "2026-04-29", count=1)
+    _write_complete_regulation_scope(
+        store,
+        "us-ca",
+        "2026-05-12-capi-cvcb-regulations",
+        count=4,
+    )
     _write_complete_regulation_scope(store, "us-ny", "2026-05-10", count=3)
     counts_path = tmp_path / "counts.json"
     counts_path.write_text(
@@ -31,6 +37,11 @@ def test_regulation_completion_classifies_federal_state_legacy_and_missing(tmp_p
                         "jurisdiction": "us-co",
                         "document_class": "regulation",
                         "provision_count": 1,
+                    },
+                    {
+                        "jurisdiction": "us-ca",
+                        "document_class": "regulation",
+                        "provision_count": 4,
                     },
                     {
                         "jurisdiction": "us-az",
@@ -59,6 +70,7 @@ def test_regulation_completion_classifies_federal_state_legacy_and_missing(tmp_p
         scopes=(
             ReleaseScope("us", "regulation", "2026-05-01"),
             ReleaseScope("us-co", "regulation", "2026-04-29"),
+            ReleaseScope("us-ca", "regulation", "2026-05-12-capi-cvcb-regulations"),
             ReleaseScope("us-co", "statute", "2026-04-29"),
         ),
     )
@@ -78,6 +90,7 @@ def test_regulation_completion_classifies_federal_state_legacy_and_missing(tmp_p
         expected_jurisdictions=(
             RegulationJurisdiction("us", "Federal"),
             RegulationJurisdiction("us-co", "Colorado"),
+            RegulationJurisdiction("us-ca", "California"),
             RegulationJurisdiction("us-ny", "New York"),
             RegulationJurisdiction("us-az", "Arizona"),
             RegulationJurisdiction("us-ak", "Alaska"),
@@ -87,12 +100,17 @@ def test_regulation_completion_classifies_federal_state_legacy_and_missing(tmp_p
 
     assert rows["us"].status is RegulationCompletionStatus.PRODUCTIONIZED_AND_VALIDATED
     assert rows["us-co"].status is RegulationCompletionStatus.PRODUCTIONIZED_AND_VALIDATED
+    assert rows["us-ca"].status is RegulationCompletionStatus.TARGETED_SCOPE_PROMOTED
+    assert rows["us-ca"].targeted_scope is True
+    assert rows["us-ca"].statewide_scope is False
     assert rows["us-ny"].status is RegulationCompletionStatus.LOCAL_ARTIFACTS_PRESENT_NOT_PROMOTED
     assert rows["us-az"].status is RegulationCompletionStatus.SUPABASE_ONLY_LEGACY
     assert rows["us-ak"].status is RegulationCompletionStatus.MISSING_SOURCE_FIRST_EXTRACTION
-    assert report.release_regulation_scope_count == 2
+    assert report.release_regulation_scope_count == 3
     assert report.status_counts()["productionized_and_validated"] == 2
+    assert report.status_counts()["targeted_scope_promoted"] == 1
     assert report.to_mapping()["document_class"] == "regulation"
+    assert report.to_mapping()["targeted_scope_promoted_count"] == 1
 
 
 def test_regulation_completion_cli_writes_report(tmp_path, capsys):
