@@ -328,6 +328,11 @@
       "version": "2026-05-04"
     },
     {
+      "document_class": "regulation",
+      "jurisdiction": "us-wa",
+      "version": "2026-05-12"
+    },
+    {
       "document_class": "statute",
       "jurisdiction": "us-wi",
       "version": "2026-05-10"

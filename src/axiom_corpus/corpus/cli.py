@@ -180,6 +180,7 @@ from axiom_corpus.corpus.usc import (
     infer_uslm_title,
     usc_run_id,
 )
+from axiom_corpus.corpus.washington_wac import extract_washington_wac
 
 
 def _cmd_validate_manifest(args: argparse.Namespace) -> int:
@@ -2740,6 +2741,53 @@ def _cmd_extract_colorado_ccr(args: argparse.Namespace) -> int:
     return 0 if report.coverage.complete or args.allow_incomplete else 2
 
 
+def _cmd_extract_washington_wac(args: argparse.Namespace) -> int:
+    store = CorpusArtifactStore(args.base)
+    expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
+    report = extract_washington_wac(
+        store,
+        version=args.version,
+        source_dir=args.source_dir,
+        source_as_of=args.source_as_of,
+        expression_date=expression_date,
+        only_title=args.only_title,
+        only_chapter=args.only_chapter,
+        limit=args.limit,
+        workers=args.workers,
+        download_dir=args.download_dir,
+        progress_stream=sys.stderr,
+    )
+    print(
+        json.dumps(
+            {
+                "jurisdiction": report.jurisdiction,
+                "document_class": report.document_class,
+                "version": report.version,
+                "title_count": report.title_count,
+                "chapter_count": report.chapter_count,
+                "section_count": report.section_count,
+                "skipped_source_count": report.skipped_source_count,
+                "error_count": len(report.errors),
+                "errors": list(report.errors[:20]),
+                "source_file_count": len(report.source_paths),
+                "provisions_written": report.provisions_written,
+                "inventory_path": str(report.inventory_path),
+                "provisions_path": str(report.provisions_path),
+                "coverage_path": str(report.coverage_path),
+                "coverage_complete": report.coverage.complete,
+                "source_count": report.coverage.source_count,
+                "provision_count": report.coverage.provision_count,
+                "matched_count": report.coverage.matched_count,
+                "missing_count": len(report.coverage.missing_from_provisions),
+                "extra_count": len(report.coverage.extra_provisions),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report.coverage.complete or args.allow_incomplete else 2
+
+
 def _cmd_extract_nycrr(args: argparse.Namespace) -> int:
     store = CorpusArtifactStore(args.base)
     expression_date = date.fromisoformat(args.expression_date) if args.expression_date else None
@@ -3780,6 +3828,23 @@ def build_parser() -> argparse.ArgumentParser:
     extract_colorado_ccr_cmd.add_argument("--download-dir", type=Path)
     extract_colorado_ccr_cmd.add_argument("--allow-incomplete", action="store_true")
     extract_colorado_ccr_cmd.set_defaults(func=_cmd_extract_colorado_ccr)
+
+    extract_washington_wac_cmd = sub.add_parser(
+        "extract-washington-wac",
+        help="Snapshot current Washington Administrative Code HTML.",
+    )
+    extract_washington_wac_cmd.add_argument("--base", type=Path, required=True)
+    extract_washington_wac_cmd.add_argument("--version", required=True)
+    extract_washington_wac_cmd.add_argument("--source-dir", type=Path)
+    extract_washington_wac_cmd.add_argument("--download-dir", type=Path)
+    extract_washington_wac_cmd.add_argument("--only-title")
+    extract_washington_wac_cmd.add_argument("--only-chapter")
+    extract_washington_wac_cmd.add_argument("--source-as-of", "--as-of", dest="source_as_of")
+    extract_washington_wac_cmd.add_argument("--expression-date")
+    extract_washington_wac_cmd.add_argument("--limit", type=int)
+    extract_washington_wac_cmd.add_argument("--workers", type=int, default=4)
+    extract_washington_wac_cmd.add_argument("--allow-incomplete", action="store_true")
+    extract_washington_wac_cmd.set_defaults(func=_cmd_extract_washington_wac)
 
     extract_nycrr_cmd = sub.add_parser(
         "extract-nycrr",
