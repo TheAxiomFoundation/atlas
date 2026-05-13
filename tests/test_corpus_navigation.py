@@ -8,6 +8,7 @@ from axiom_corpus.corpus.navigation import (
     deterministic_navigation_id,
     group_nodes_by_scope,
 )
+from axiom_corpus.corpus.supabase import deterministic_provision_id
 
 
 def _record(
@@ -19,6 +20,7 @@ def _record(
     has_rulespec: bool | None = None,
     jurisdiction: str = "us-co",
     document_class: str = "statute",
+    version: str | None = None,
     metadata: dict | None = None,
 ) -> ProvisionRecord:
     return ProvisionRecord(
@@ -29,6 +31,7 @@ def _record(
         heading=heading,
         ordinal=ordinal,
         has_rulespec=has_rulespec,
+        version=version,
         metadata=metadata,
     )
 
@@ -60,6 +63,17 @@ def test_parent_child_navigation_uses_explicit_parent_citation_path():
     assert title.depth == 0 and article.depth == 1 and part.depth == 2
     assert article.label == "Income Tax"
     assert part.label == "part-1"  # falls back to segment when no heading
+
+
+def test_navigation_uses_versioned_provision_id_for_local_jsonl():
+    nodes = build_navigation_nodes([
+        _record("us-co/statute/title-39", version="2026-05-13"),
+    ])
+
+    assert nodes[0].provision_id == deterministic_provision_id(
+        "us-co/statute/title-39",
+        "2026-05-13",
+    )
 
 
 def test_citation_path_hierarchy_links_to_nearest_existing_ancestor():
@@ -203,6 +217,15 @@ def test_node_id_is_deterministic_and_unique():
     assert len({n.id for n in nodes_first}) == len(nodes_first)
 
 
+def test_node_id_includes_version_when_present():
+    legacy = build_navigation_nodes([_record("alpha")])[0]
+    versioned = build_navigation_nodes([_record("alpha", version="2026-05-13")])[0]
+
+    assert versioned.id == deterministic_navigation_id("alpha", "2026-05-13")
+    assert versioned.id != legacy.id
+    assert versioned.version == "2026-05-13"
+
+
 def test_group_nodes_by_scope_partitions_jurisdictions():
     nodes = build_navigation_nodes(
         [
@@ -217,8 +240,8 @@ def test_group_nodes_by_scope_partitions_jurisdictions():
         ]
     )
     grouped = group_nodes_by_scope(nodes)
-    assert set(grouped.keys()) == {("us-co", "statute"), ("us", "regulation")}
-    assert len(grouped[("us", "regulation")]) == 2
+    assert set(grouped.keys()) == {("us-co", "statute", None), ("us", "regulation", None)}
+    assert len(grouped[("us", "regulation", None)]) == 2
 
 
 def test_filter_by_jurisdiction_and_doc_type_excludes_other_scopes():

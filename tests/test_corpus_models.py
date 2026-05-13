@@ -46,6 +46,7 @@ def test_provision_record_maps_to_supabase_shape():
     assert tuple(row) == SUPABASE_PROVISIONS_COLUMNS
     assert row["doc_type"] == "regulation"
     assert row["citation_path"] == "us/regulation/7/273/1"
+    assert row["version"] is None
     assert "source_url" in row
     assert "source_id" not in row
     assert "source_format" not in row

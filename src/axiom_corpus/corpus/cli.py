@@ -330,13 +330,14 @@ def _cmd_load_supabase(args: argparse.Namespace) -> int:
     if args.build_navigation and not args.dry_run and report.rows_loaded:
         navigation_records: list[ProvisionRecord] = []
         existing_navigation_statuses: dict[str, str] = {}
-        for jurisdiction, document_class in _provision_scopes(records):
+        for jurisdiction, document_class, version in _provision_release_scopes(records):
             navigation_records.extend(
                 fetch_provisions_for_navigation(
                     service_key=service_key,
                     supabase_url=args.supabase_url,
                     jurisdiction=jurisdiction,
                     doc_type=document_class,
+                    version=version,
                 )
             )
             if args.preserve_navigation_statuses:
@@ -346,10 +347,11 @@ def _cmd_load_supabase(args: argparse.Namespace) -> int:
                         supabase_url=args.supabase_url,
                         jurisdiction=jurisdiction,
                         doc_type=document_class,
+                        version=version,
                     )
                 )
         encoded_paths = _resolve_encoded_paths(
-            args, {jurisdiction for jurisdiction, _ in _provision_scopes(records)}
+            args, {jurisdiction for jurisdiction, _, _ in _provision_release_scopes(records)}
         )
         nodes = build_navigation_nodes(
             _apply_navigation_status_overrides(
@@ -365,7 +367,7 @@ def _cmd_load_supabase(args: argparse.Namespace) -> int:
             supabase_url=args.supabase_url,
             chunk_size=args.chunk_size,
             replace_scope=True,
-            replace_scopes=_provision_scopes(records),
+            replace_scopes=_provision_release_scopes(records),
             dry_run=False,
             progress_stream=sys.stderr,
         )
@@ -521,16 +523,17 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
         sources_used = [str(path) for path in args.provisions]
         # Preserve manually-set statuses from the live nav table when we are
         # going to write back, so a rebuild from a partial JSONL does not wipe
-        # them. Fetch is scoped per (jurisdiction, doc_type) to avoid pulling
-        # rows for unrelated scopes.
+        # them. Fetch is scoped per release scope to avoid pulling rows for
+        # unrelated jurisdictions, document classes, or versions.
         if will_write_supabase and args.preserve_statuses:
-            for jurisdiction, document_class in _provision_scopes(records):
+            for jurisdiction, document_class, version in _provision_release_scopes(records):
                 existing_navigation_statuses.update(
                     fetch_navigation_statuses(
                         service_key=service_key,
                         supabase_url=args.supabase_url,
                         jurisdiction=jurisdiction,
                         doc_type=document_class,
+                        version=version,
                     )
                 )
     else:
@@ -539,6 +542,7 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
             supabase_url=args.supabase_url,
             jurisdiction=args.jurisdiction,
             doc_type=args.doc_type,
+            version=args.version,
         )
         if args.preserve_statuses:
             existing_navigation_statuses = fetch_navigation_statuses(
@@ -546,6 +550,7 @@ def _cmd_build_navigation_index(args: argparse.Namespace) -> int:
                 supabase_url=args.supabase_url,
                 jurisdiction=args.jurisdiction,
                 doc_type=args.doc_type,
+                version=args.version,
             )
         sources_used = [f"supabase:{args.supabase_url}"]
 
@@ -611,9 +616,22 @@ def _provision_scopes(records: tuple[ProvisionRecord, ...]) -> tuple[tuple[str, 
     return tuple(sorted({(record.jurisdiction, record.document_class) for record in records}))
 
 
-def _explicit_navigation_replace_scopes(args: argparse.Namespace) -> tuple[tuple[str, str], ...]:
+def _provision_release_scopes(
+    records: tuple[ProvisionRecord, ...],
+) -> tuple[tuple[str, str, str | None], ...]:
+    return tuple(
+        sorted({
+            (record.jurisdiction, record.document_class, record.version)
+            for record in records
+        }, key=lambda scope: (scope[0], scope[1], scope[2] or ""))
+    )
+
+
+def _explicit_navigation_replace_scopes(
+    args: argparse.Namespace,
+) -> tuple[tuple[str, str, str | None], ...]:
     if args.jurisdiction and args.doc_type:
-        return ((args.jurisdiction, args.doc_type),)
+        return ((args.jurisdiction, args.doc_type, args.version),)
     return ()
 
 
@@ -4025,8 +4043,12 @@ def build_parser() -> argparse.ArgumentParser:
     load_supabase.add_argument(
         "--preserve-existing-ids",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Reuse existing corpus.provisions IDs for matching citation paths before upsert.",
+        default=False,
+        help=(
+            "Legacy migration aid: reuse existing corpus.provisions IDs for "
+            "matching citation paths before upsert. Default is false so "
+            "new release versions get distinct provision IDs."
+        ),
     )
     load_supabase.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
     load_supabase.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
@@ -4052,10 +4074,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--stage",
         action="store_true",
         help=(
-            "Stage the load: auto-register a release_scopes row but leave "
-            "active=false so the data is loaded but invisible to the app. "
-            "Default is auto-publish (active=true). Flip later with "
-            "`axiom-corpus-ingest publish`."
+            "Stage the load: auto-register exact release_scopes version rows "
+            "with active=false so the loaded provisions stay outside "
+            "current_provisions until promoted. Default is auto-publish "
+            "(active=true). Flip later with `axiom-corpus-ingest publish`."
         ),
     )
     load_supabase.add_argument(
@@ -4105,6 +4127,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--doc-type",
         choices=[document_class.value for document_class in DocumentClass],
         help="Filter to one document class (e.g. statute, regulation).",
+    )
+    build_navigation.add_argument(
+        "--version",
+        help=(
+            "Filter to one source/release version when building from Supabase "
+            "or explicitly replacing an empty navigation scope."
+        ),
     )
     build_navigation.add_argument(
         "--output",
@@ -4212,7 +4241,7 @@ def build_parser() -> argparse.ArgumentParser:
     publish_cmd = sub.add_parser(
         "publish",
         help=(
-            "Mark a corpus scope as visible in the Axiom app. Flips "
+            "Mark one corpus scope version as visible in the Axiom app. Flips "
             "corpus.release_scopes.active = true for "
             "(release, jurisdiction, document_class, version) and "
             "refreshes the materialized count view."
@@ -4236,7 +4265,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     unpublish_cmd = sub.add_parser(
         "unpublish",
-        help="Mark a corpus scope as hidden (active=false). Inverse of `publish`.",
+        help=(
+            "Mark one corpus scope version as hidden (active=false). "
+            "Inverse of `publish`."
+        ),
     )
     unpublish_cmd.add_argument("--jurisdiction", required=True)
     unpublish_cmd.add_argument("--doc-type", required=True, dest="doc_type")
@@ -4254,8 +4286,9 @@ def build_parser() -> argparse.ArgumentParser:
     list_unpublished_cmd = sub.add_parser(
         "list-unpublished",
         help=(
-            "List all release_scopes rows with active=false — i.e., scopes "
-            "that have been loaded but are currently invisible to the app."
+            "List release_scopes version rows with active=false. These are "
+            "staged or explicitly unpublished release rows, not a full "
+            "visibility audit of every provision row."
         ),
     )
     list_unpublished_cmd.add_argument("--release", default="current")

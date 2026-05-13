@@ -26,6 +26,7 @@ identical rows.
 
 from __future__ import annotations
 
+import json
 import re
 from collections import defaultdict
 from collections.abc import Iterable
@@ -48,6 +49,7 @@ NAVIGATION_NODES_COLUMNS: tuple[str, ...] = (
     "depth",
     "provision_id",
     "citation_path",
+    "version",
     "has_children",
     "child_count",
     "has_rulespec",
@@ -71,6 +73,7 @@ class NavigationNode:
     depth: int
     provision_id: str | None
     citation_path: str | None
+    version: str | None = None
     has_children: bool = False
     child_count: int = 0
     has_rulespec: bool = False
@@ -90,6 +93,7 @@ class NavigationNode:
             "depth": self.depth,
             "provision_id": self.provision_id,
             "citation_path": self.citation_path,
+            "version": self.version,
             "has_children": self.has_children,
             "child_count": self.child_count,
             "has_rulespec": self.has_rulespec,
@@ -98,9 +102,16 @@ class NavigationNode:
         }
 
 
-def deterministic_navigation_id(path: str) -> str:
-    """Return the stable UUID for a navigation node keyed by its path."""
-    return str(uuid5(NAMESPACE_URL, f"axiom-navigation:{path}"))
+def deterministic_navigation_id(path: str, version: str | None = None) -> str:
+    """Return the stable UUID for a navigation node keyed by path and version."""
+    normalized_version = str(version or "").strip()
+    if not normalized_version:
+        return str(uuid5(NAMESPACE_URL, f"axiom-navigation:{path}"))
+    identity = json.dumps(
+        ["axiom-navigation", normalized_version, path],
+        separators=(",", ":"),
+    )
+    return str(uuid5(NAMESPACE_URL, identity))
 
 
 def build_navigation_nodes(
@@ -159,7 +170,7 @@ def build_navigation_nodes(
         parent_path = parent_paths[path]
         segment = _segment(path, parent_path)
         nodes[path] = NavigationNode(
-            id=deterministic_navigation_id(path),
+            id=deterministic_navigation_id(path, record.version),
             jurisdiction=record.jurisdiction,
             doc_type=record.document_class,
             path=path,
@@ -168,8 +179,9 @@ def build_navigation_nodes(
             label=_label_for(record, segment),
             sort_key=_sort_key(record, segment),
             depth=depths[path],
-            provision_id=record.id or deterministic_provision_id(path),
+            provision_id=_provision_id_for_navigation(record),
             citation_path=path,
+            version=record.version,
             has_rulespec=bool(record.has_rulespec) or path in encoded_set,
             status=_status_for(record),
         )
@@ -202,17 +214,24 @@ def build_navigation_nodes(
     )
 
 
+def _provision_id_for_navigation(record: ProvisionRecord) -> str:
+    legacy_id = deterministic_provision_id(record.citation_path)
+    if record.version and (record.id is None or record.id == legacy_id):
+        return deterministic_provision_id(record.citation_path, record.version)
+    return record.id or legacy_id
+
+
 def group_nodes_by_scope(
     nodes: Iterable[NavigationNode],
-) -> dict[tuple[str, str], tuple[NavigationNode, ...]]:
-    """Group navigation rows by ``(jurisdiction, doc_type)``.
+) -> dict[tuple[str, str, str | None], tuple[NavigationNode, ...]]:
+    """Group navigation rows by ``(jurisdiction, doc_type, version)``.
 
-    Used by the writer to scope per-(jurisdiction, doc_type) deletes during
-    rebuilds without disturbing unrelated scopes.
+    Used by the writer to scope deletes during rebuilds without disturbing
+    unrelated jurisdictions, document classes, or source versions.
     """
-    grouped: dict[tuple[str, str], list[NavigationNode]] = defaultdict(list)
+    grouped: dict[tuple[str, str, str | None], list[NavigationNode]] = defaultdict(list)
     for node in nodes:
-        grouped[(node.jurisdiction, node.doc_type)].append(node)
+        grouped[(node.jurisdiction, node.doc_type, node.version)].append(node)
     return {key: tuple(values) for key, values in grouped.items()}
 
 

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from axiom_corpus.corpus.models import ProvisionRecord
 from axiom_corpus.corpus.releases import ReleaseManifest, ReleaseScope
 from axiom_corpus.corpus.supabase import (
@@ -33,8 +35,33 @@ def test_supabase_projection_derives_stable_ids_and_parent_ids():
     assert row["id"] == deterministic_provision_id("us/regulation/7/273/1")
     assert row["parent_id"] == deterministic_provision_id("us/regulation/7/273")
     assert row["doc_type"] == "regulation"
+    assert row["version"] is None
     assert row["has_rulespec"] is False
     assert row["identifiers"] == {}
+
+
+def test_supabase_projection_uses_versioned_ids_for_release_rows():
+    record = ProvisionRecord(
+        jurisdiction="us",
+        document_class="regulation",
+        citation_path="us/regulation/7/273/1",
+        parent_citation_path="us/regulation/7/273",
+        id=deterministic_provision_id("us/regulation/7/273/1"),
+        parent_id=deterministic_provision_id("us/regulation/7/273"),
+        version="2026-05-13",
+    )
+
+    row = provision_to_supabase_row(record)
+
+    assert row["id"] == deterministic_provision_id(
+        "us/regulation/7/273/1",
+        "2026-05-13",
+    )
+    assert row["parent_id"] == deterministic_provision_id(
+        "us/regulation/7/273",
+        "2026-05-13",
+    )
+    assert row["version"] == "2026-05-13"
 
 
 def test_supabase_projection_preserves_non_uuid_source_document_id_as_identifier():
@@ -273,6 +300,9 @@ def test_load_provisions_to_supabase_upserts_chunks_and_refreshes(monkeypatch):
     calls = []
 
     class FakeResponse:
+        def __init__(self, body=b""):
+            self.body = body
+
         def __enter__(self):
             return self
 
@@ -280,10 +310,19 @@ def test_load_provisions_to_supabase_upserts_chunks_and_refreshes(monkeypatch):
             return None
 
         def read(self):
-            return b"{}"
+            return self.body
 
     def fake_urlopen(req, timeout):
         calls.append((req.full_url, req.data, timeout))
+        if req.get_method() == "GET" and "/release_scopes" in req.full_url:
+            return FakeResponse(json.dumps([{
+                "release_name": "current",
+                "jurisdiction": "us",
+                "document_class": "regulation",
+                "version": "2026-05-13",
+                "active": True,
+                "synced_at": "2026-05-13T12:00:00+00:00",
+            }]).encode())
         return FakeResponse()
 
     monkeypatch.setattr(supabase.urllib.request, "urlopen", fake_urlopen)
@@ -294,11 +333,13 @@ def test_load_provisions_to_supabase_upserts_chunks_and_refreshes(monkeypatch):
                 jurisdiction="us",
                 document_class="regulation",
                 citation_path="us/regulation/7/273",
+                version="2026-05-13",
             ),
             ProvisionRecord(
                 jurisdiction="us",
                 document_class="regulation",
                 citation_path="us/regulation/7/273/1",
+                version="2026-05-13",
             ),
         ],
         service_key="service",
@@ -310,13 +351,19 @@ def test_load_provisions_to_supabase_upserts_chunks_and_refreshes(monkeypatch):
     assert report.rows_loaded == 2
     assert report.chunk_count == 2
     assert report.refreshed
-    # 2 provision chunks + 1 release_scopes auto-register + 1 analytics refresh.
+    # 2 provision chunks + 1 release_scopes auto-register + 1 readback + 1 refresh.
     assert [call[0] for call in calls] == [
         "https://example.supabase.co/rest/v1/provisions?on_conflict=id",
         "https://example.supabase.co/rest/v1/provisions?on_conflict=id",
         (
             "https://example.supabase.co/rest/v1/release_scopes?"
             "on_conflict=release_name,jurisdiction,document_class,version"
+        ),
+        (
+            "https://example.supabase.co/rest/v1/release_scopes?"
+            "release_name=eq.current&jurisdiction=eq.us&document_class=eq.regulation&"
+            "version=eq.2026-05-13&select=release_name%2Cjurisdiction%2Cdocument_class%2C"
+            "version%2Cactive%2Csynced_at&limit=1"
         ),
         "https://example.supabase.co/rest/v1/rpc/refresh_corpus_analytics",
     ]
@@ -326,8 +373,15 @@ def test_load_provisions_to_supabase_upserts_chunks_and_refreshes(monkeypatch):
     scope = report.auto_registered_scopes[0]
     assert scope["jurisdiction"] == "us"
     assert scope["document_class"] == "regulation"
+    assert scope["version"] == "2026-05-13"
     assert scope["active"] is True
-    assert json.loads(calls[0][1])[0]["citation_path"] == "us/regulation/7/273"
+    first_payload = json.loads(calls[0][1])
+    assert first_payload[0]["citation_path"] == "us/regulation/7/273"
+    assert first_payload[0]["version"] == "2026-05-13"
+    assert first_payload[0]["id"] == deterministic_provision_id(
+        "us/regulation/7/273",
+        "2026-05-13",
+    )
 
 
 def test_load_provisions_to_supabase_dry_run_does_not_call_network(monkeypatch):
@@ -344,6 +398,7 @@ def test_load_provisions_to_supabase_dry_run_does_not_call_network(monkeypatch):
                 jurisdiction="us",
                 document_class="regulation",
                 citation_path="us/regulation/7/273",
+                version="2026-05-13",
             )
         ],
         service_key="",
@@ -354,6 +409,28 @@ def test_load_provisions_to_supabase_dry_run_does_not_call_network(monkeypatch):
     assert report.rows_loaded == 0
     assert report.chunk_count == 1
     assert not report.refreshed
+
+
+def test_load_provisions_to_supabase_requires_version_when_auto_registering(monkeypatch):
+    import axiom_corpus.corpus.supabase as supabase
+
+    def fake_urlopen(*args, **kwargs):
+        raise AssertionError("validation should fail before network")
+
+    monkeypatch.setattr(supabase.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(ValueError, match="version is required"):
+        load_provisions_to_supabase(
+            [
+                ProvisionRecord(
+                    jurisdiction="us",
+                    document_class="regulation",
+                    citation_path="us/regulation/7/273",
+                )
+            ],
+            service_key="",
+            dry_run=True,
+        )
 
 
 def test_load_provisions_to_supabase_can_preserve_existing_ids(monkeypatch):
@@ -387,6 +464,15 @@ def test_load_provisions_to_supabase_can_preserve_existing_ids(monkeypatch):
                     ]
                 ).encode()
             )
+        if req.get_method() == "GET" and "/release_scopes" in req.full_url:
+            return FakeResponse(json.dumps([{
+                "release_name": "current",
+                "jurisdiction": "us",
+                "document_class": "statute",
+                "version": "2026-05-13",
+                "active": True,
+                "synced_at": "2026-05-13T12:00:00+00:00",
+            }]).encode())
         return FakeResponse()
 
     monkeypatch.setattr(supabase.urllib.request, "urlopen", fake_urlopen)
@@ -397,12 +483,14 @@ def test_load_provisions_to_supabase_can_preserve_existing_ids(monkeypatch):
                 jurisdiction="us",
                 document_class="statute",
                 citation_path="us/statute/1",
+                version="2026-05-13",
             ),
             ProvisionRecord(
                 jurisdiction="us",
                 document_class="statute",
                 citation_path="us/statute/1/1",
                 parent_citation_path="us/statute/1",
+                version="2026-05-13",
             ),
         ],
         service_key="service",
@@ -414,6 +502,7 @@ def test_load_provisions_to_supabase_can_preserve_existing_ids(monkeypatch):
     assert report.existing_id_count == 2
     upsert_payload = json.loads(calls[1][1])
     assert upsert_payload[0]["id"] == title_id
+    assert upsert_payload[0]["version"] == "2026-05-13"
     assert upsert_payload[1]["id"] == section_id
     assert upsert_payload[1]["parent_id"] == title_id
 
@@ -514,6 +603,9 @@ def test_refresh_corpus_analytics_calls_current_rpc(monkeypatch):
     calls = []
 
     class FakeResponse:
+        def __init__(self, body=b"{}"):
+            self.body = body
+
         def __enter__(self):
             return self
 
@@ -640,6 +732,9 @@ def test_load_provisions_auto_publish_false_stages_load(monkeypatch):
     calls = []
 
     class FakeResponse:
+        def __init__(self, body=b"{}"):
+            self.body = body
+
         def __enter__(self):
             return self
 
@@ -647,10 +742,19 @@ def test_load_provisions_auto_publish_false_stages_load(monkeypatch):
             return None
 
         def read(self):
-            return b"{}"
+            return self.body
 
     def fake_urlopen(req, timeout):
-        calls.append((req.full_url, req.data))
+        calls.append((req.get_method(), req.full_url, req.data))
+        if req.get_method() == "GET" and "/release_scopes" in req.full_url:
+            return FakeResponse(json.dumps([{
+                "release_name": "current",
+                "jurisdiction": "us-co",
+                "document_class": "regulation",
+                "version": "2026-04-29",
+                "active": False,
+                "synced_at": "2026-05-13T12:00:00+00:00",
+            }]).encode())
         return FakeResponse()
 
     monkeypatch.setattr(supabase.urllib.request, "urlopen", fake_urlopen)
@@ -677,10 +781,10 @@ def test_load_provisions_auto_publish_false_stages_load(monkeypatch):
     assert scope["active"] is False
     # Confirm the release_scopes POST went through with active=false
     rs_calls = [
-        call for call in calls if "release_scopes" in call[0]
+        call for call in calls if call[0] == "POST" and "release_scopes" in call[1]
     ]
     assert len(rs_calls) == 1
-    payload = json.loads(rs_calls[0][1])
+    payload = json.loads(rs_calls[0][2])
     assert payload[0]["active"] is False
 
 
@@ -885,6 +989,9 @@ def test_load_provisions_auto_register_uses_ignore_duplicates(monkeypatch):
     captured_headers = []
 
     class FakeResponse:
+        def __init__(self, body=b""):
+            self.body = body
+
         def __enter__(self):
             return self
 
@@ -892,16 +999,25 @@ def test_load_provisions_auto_register_uses_ignore_duplicates(monkeypatch):
             return None
 
         def read(self):
-            return b""
+            return self.body
 
     def fake_urlopen(req, timeout):
         if "release_scopes" in req.full_url and req.get_method() == "POST":
             captured_headers.append(dict(req.headers))
+        if "release_scopes" in req.full_url and req.get_method() == "GET":
+            return FakeResponse(json.dumps([{
+                "release_name": "current",
+                "jurisdiction": "us-mo",
+                "document_class": "statute",
+                "version": "2026-05-13",
+                "active": False,
+                "synced_at": "2026-05-12T12:00:00+00:00",
+            }]).encode())
         return FakeResponse()
 
     monkeypatch.setattr(supabase.urllib.request, "urlopen", fake_urlopen)
 
-    load_provisions_to_supabase(
+    report = load_provisions_to_supabase(
         [
             ProvisionRecord(
                 jurisdiction="us-mo",
@@ -921,3 +1037,4 @@ def test_load_provisions_auto_register_uses_ignore_duplicates(monkeypatch):
     prefer = captured_headers[0].get("Prefer") or ""
     assert "resolution=ignore-duplicates" in prefer
     assert "resolution=merge-duplicates" not in prefer
+    assert report.auto_registered_scopes[0]["active"] is False

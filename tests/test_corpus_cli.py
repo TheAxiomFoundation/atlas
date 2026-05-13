@@ -311,6 +311,7 @@ def test_export_supabase_cli(tmp_path, capsys):
                 document_class="regulation",
                 citation_path="us/regulation/7/273",
                 heading="Certification of Eligible Households",
+                version="2026-04-29",
             )
         ],
     )
@@ -337,6 +338,7 @@ def test_load_supabase_cli_dry_run(tmp_path, capsys):
                 document_class="regulation",
                 citation_path="us/regulation/7/273",
                 heading="Certification of Eligible Households",
+                version="2026-04-29",
             )
         ],
     )
@@ -363,6 +365,7 @@ def test_load_supabase_cli_replace_scope_dry_run(tmp_path, capsys):
                 document_class="statute",
                 citation_path="us-ga/statute/1",
                 heading="Title 1",
+                version="2022-11-01",
             )
         ],
     )
@@ -395,6 +398,7 @@ def test_load_supabase_cli_dry_run_skips_navigation_writes(tmp_path, capsys):
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                version="2026-05-05",
             )
         ],
     )
@@ -419,6 +423,7 @@ def test_load_supabase_cli_no_build_navigation_omits_navigation_section(tmp_path
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                version="2026-05-05",
             )
         ],
     )
@@ -453,6 +458,7 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                version="2026-05-05",
                 metadata={"status": "current"},
             ),
         ],
@@ -469,13 +475,18 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
     captured: dict[str, object] = {}
 
     def fake_fetch_for_navigation(**kwargs):
-        captured["fetch_scope"] = (kwargs["jurisdiction"], kwargs["doc_type"])
+        captured["fetch_scope"] = (
+            kwargs["jurisdiction"],
+            kwargs["doc_type"],
+            kwargs["version"],
+        )
         return (
             ProvisionRecord(
                 id="11111111-1111-1111-1111-111111111111",
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                version="2026-05-05",
             ),
             ProvisionRecord(
                 id="22222222-2222-2222-2222-222222222222",
@@ -483,6 +494,7 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
                 document_class="statute",
                 citation_path="us-co/statute/title-39/article-22",
                 parent_citation_path="us-co/statute/title-39",
+                version="2026-05-05",
             ),
         )
 
@@ -503,7 +515,7 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
             rows_total=len(captured["node_paths"]),
             rows_loaded=len(captured["node_paths"]),
             chunk_count=1,
-            scopes_replaced=(("us-co", "statute"),),
+            scopes_replaced=(("us-co", "statute", "2026-05-05"),),
             rows_deleted=0,
             delete_chunk_count=0,
         )
@@ -514,9 +526,9 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
-    assert captured["fetch_scope"] == ("us-co", "statute")
+    assert captured["fetch_scope"] == ("us-co", "statute", "2026-05-05")
     assert captured["replace_scope"] is True
-    assert captured["replace_scopes"] == (("us-co", "statute"),)
+    assert captured["replace_scopes"] == (("us-co", "statute", "2026-05-05"),)
     assert set(captured["node_paths"]) == {
         "us-co/statute/title-39",
         "us-co/statute/title-39/article-22",
@@ -530,7 +542,7 @@ def test_load_supabase_cli_rebuilds_navigation_after_provisions_load(tmp_path, c
         "us-co/statute/title-39/article-22": "inactive",
     }
     assert payload["navigation"]["rows_loaded"] == 2
-    assert payload["navigation"]["scopes_replaced"] == [["us-co", "statute"]]
+    assert payload["navigation"]["scopes_replaced"] == [["us-co", "statute", "2026-05-05"]]
 
 
 def test_build_navigation_index_all_requires_input_source():
@@ -558,7 +570,7 @@ def test_build_navigation_index_passes_explicit_empty_replace_scope(capsys, monk
             rows_total=0,
             rows_loaded=0,
             chunk_count=0,
-            scopes_replaced=(("us-co", "statute"),),
+            scopes_replaced=(("us-co", "statute", None),),
             rows_deleted=3,
             delete_chunk_count=1,
         )
@@ -579,7 +591,7 @@ def test_build_navigation_index_passes_explicit_empty_replace_scope(capsys, monk
 
     assert exit_code == 0
     assert captured["nodes"] == ()
-    assert captured["replace_scopes"] == (("us-co", "statute"),)
+    assert captured["replace_scopes"] == (("us-co", "statute", None),)
     assert payload["nodes_built"] == 0
     assert payload["supabase"]["rows_deleted"] == 3
 
@@ -599,6 +611,7 @@ def test_build_navigation_index_from_supabase_preserves_existing_status(capsys, 
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
                 id="11111111-1111-1111-1111-111111111111",
+                version="2026-05-05",
             ),
         ),
     )
@@ -614,7 +627,7 @@ def test_build_navigation_index_from_supabase_preserves_existing_status(capsys, 
             rows_total=1,
             rows_loaded=1,
             chunk_count=1,
-            scopes_replaced=(("us-co", "statute"),),
+            scopes_replaced=(("us-co", "statute", "2026-05-05"),),
             rows_deleted=0,
             delete_chunk_count=0,
         )
@@ -654,6 +667,7 @@ def test_build_navigation_index_from_provisions_preserves_existing_status(
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                version="2026-05-05",
             )
         ],
     )
@@ -707,6 +721,7 @@ def test_build_navigation_index_from_provisions_replace_scope_is_explicit(
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                version="2026-05-05",
             )
         ],
     )
@@ -721,7 +736,7 @@ def test_build_navigation_index_from_provisions_replace_scope_is_explicit(
             rows_total=1,
             rows_loaded=1,
             chunk_count=1,
-            scopes_replaced=(("us-co", "statute"),),
+            scopes_replaced=(("us-co", "statute", "2026-05-05"),),
             rows_deleted=0,
             delete_chunk_count=0,
         )
@@ -759,6 +774,7 @@ def test_build_navigation_index_no_preserve_statuses_skips_status_fetch(
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                version="2026-05-05",
             )
         ],
     )
@@ -776,7 +792,7 @@ def test_build_navigation_index_no_preserve_statuses_skips_status_fetch(
             rows_total=1,
             rows_loaded=1,
             chunk_count=1,
-            scopes_replaced=(("us-co", "statute"),),
+            scopes_replaced=(("us-co", "statute", "2026-05-05"),),
             rows_deleted=0,
             delete_chunk_count=0,
         ),
@@ -812,6 +828,7 @@ def test_load_supabase_no_preserve_navigation_statuses_skips_status_fetch(
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                version="2026-05-05",
             )
         ],
     )
@@ -832,6 +849,7 @@ def test_load_supabase_no_preserve_navigation_statuses_skips_status_fetch(
                 jurisdiction="us-co",
                 document_class="statute",
                 citation_path="us-co/statute/title-39",
+                version="2026-05-05",
             ),
         ),
     )
@@ -847,7 +865,7 @@ def test_load_supabase_no_preserve_navigation_statuses_skips_status_fetch(
             rows_total=1,
             rows_loaded=1,
             chunk_count=1,
-            scopes_replaced=(("us-co", "statute"),),
+            scopes_replaced=(("us-co", "statute", "2026-05-05"),),
             rows_deleted=0,
             delete_chunk_count=0,
         ),

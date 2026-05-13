@@ -27,6 +27,8 @@ from axiom_corpus.corpus.supabase import (
     _rest_url,
 )
 
+NavigationScope = tuple[str, str, str | None]
+
 _PROVISION_FIELDS = (
     "id",
     "jurisdiction",
@@ -36,6 +38,7 @@ _PROVISION_FIELDS = (
     "ordinal",
     "heading",
     "citation_path",
+    "version",
     "rulespec_path",
     "has_rulespec",
     "language",
@@ -49,7 +52,7 @@ class NavigationSupabaseWriteReport:
     rows_total: int
     rows_loaded: int
     chunk_count: int
-    scopes_replaced: tuple[tuple[str, str], ...]
+    scopes_replaced: tuple[NavigationScope, ...]
     rows_deleted: int
     delete_chunk_count: int
     dry_run: bool = False
@@ -74,15 +77,16 @@ def write_navigation_nodes_to_supabase(
     chunk_size: int = 500,
     delete_chunk_size: int = 200,
     replace_scope: bool = True,
-    replace_scopes: Iterable[tuple[str, str]] | None = None,
+    replace_scopes: Iterable[NavigationScope] | None = None,
     dry_run: bool = False,
     progress_stream: TextIO | None = None,
 ) -> NavigationSupabaseWriteReport:
     """Upsert navigation rows into `corpus.navigation_nodes`.
 
     When ``replace_scope`` is true the writer first deletes existing rows for
-    every ``(jurisdiction, doc_type)`` represented in the input, plus any
-    explicit ``replace_scopes``. Scopes not in those sets are never touched.
+    every ``(jurisdiction, doc_type, version)`` represented in the input,
+    plus any explicit ``replace_scopes``. Scopes not in those sets are never
+    touched.
     The loader is otherwise idempotent: rerun with the same input and the
     table converges on the same rows because IDs are deterministic and
     unscoped rows would only arise if a provision was deleted upstream —
@@ -95,19 +99,24 @@ def write_navigation_nodes_to_supabase(
 
     materialized = tuple(nodes)
     grouped = group_nodes_by_scope(materialized)
-    scopes_to_replace = tuple(
-        sorted(set(grouped) | set(replace_scopes or ())) if replace_scope else ()
+    scope_set = set(grouped)
+    scope_set.update(replace_scopes or ())
+    scopes_to_replace = (
+        tuple(sorted(scope_set, key=lambda scope: (scope[0], scope[1], scope[2] or "")))
+        if replace_scope
+        else ()
     )
     rest_url = _rest_url(supabase_url)
 
     rows_deleted = 0
     delete_chunk_count = 0
     if replace_scope and not dry_run:
-        for jurisdiction, doc_type in scopes_to_replace:
-            scope_nodes = grouped.get((jurisdiction, doc_type), ())
+        for jurisdiction, doc_type, version in scopes_to_replace:
+            scope_nodes = grouped.get((jurisdiction, doc_type, version), ())
             scope_rows_deleted, scope_chunks = _delete_scope_excluding_paths(
                 jurisdiction=jurisdiction,
                 doc_type=doc_type,
+                version=version,
                 keep_paths={node.path for node in scope_nodes},
                 service_key=service_key,
                 rest_url=rest_url,
@@ -118,7 +127,7 @@ def write_navigation_nodes_to_supabase(
             if progress_stream is not None:
                 print(
                     f"navigation: pruned {scope_rows_deleted} stale rows in "
-                    f"({jurisdiction}, {doc_type})",
+                    f"({jurisdiction}, {doc_type}, {version or 'legacy'})",
                     file=progress_stream,
                     flush=True,
                 )
@@ -157,6 +166,7 @@ def _delete_scope_excluding_paths(
     *,
     jurisdiction: str,
     doc_type: str,
+    version: str | None,
     keep_paths: set[str],
     service_key: str,
     rest_url: str,
@@ -165,6 +175,7 @@ def _delete_scope_excluding_paths(
     existing = _fetch_scope_paths(
         jurisdiction=jurisdiction,
         doc_type=doc_type,
+        version=version,
         service_key=service_key,
         rest_url=rest_url,
     )
@@ -179,6 +190,7 @@ def _delete_scope_excluding_paths(
             chunk,
             jurisdiction=jurisdiction,
             doc_type=doc_type,
+            version=version,
             service_key=service_key,
             rest_url=rest_url,
         )
@@ -190,6 +202,7 @@ def _fetch_scope_paths(
     *,
     jurisdiction: str,
     doc_type: str,
+    version: str | None,
     service_key: str,
     rest_url: str,
     page_size: int = 1_000,
@@ -201,6 +214,7 @@ def _fetch_scope_paths(
             "select": "path",
             "jurisdiction": f"eq.{jurisdiction}",
             "doc_type": f"eq.{doc_type}",
+            "version": f"eq.{version}" if version is not None else "is.null",
             "order": "path.asc",
             "limit": str(page_size),
         }
@@ -234,6 +248,7 @@ def _delete_navigation_paths(
     *,
     jurisdiction: str,
     doc_type: str,
+    version: str | None,
     service_key: str,
     rest_url: str,
 ) -> None:
@@ -244,6 +259,7 @@ def _delete_navigation_paths(
         {
             "jurisdiction": f"eq.{jurisdiction}",
             "doc_type": f"eq.{doc_type}",
+            "version": f"eq.{version}" if version is not None else "is.null",
             "path": in_clause,
         }
     )
@@ -298,6 +314,7 @@ def fetch_provisions_for_navigation(
     supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
     jurisdiction: str | None = None,
     doc_type: str | None = None,
+    version: str | None = None,
     page_size: int = 1_000,
 ) -> tuple[ProvisionRecord, ...]:
     """Page through `corpus.provisions` and return the slim records the
@@ -320,6 +337,8 @@ def fetch_provisions_for_navigation(
             params["jurisdiction"] = f"eq.{jurisdiction}"
         if doc_type is not None:
             params["doc_type"] = f"eq.{doc_type}"
+        if version is not None:
+            params["version"] = f"eq.{version}"
         if last_id is not None:
             params["id"] = f"gt.{last_id}"
         query = urllib.parse.urlencode(params)
@@ -366,6 +385,7 @@ def fetch_provisions_for_navigation(
                     "level": raw.get("level"),
                     "ordinal": raw.get("ordinal"),
                     "heading": raw.get("heading"),
+                    "version": raw.get("version"),
                     "rulespec_path": raw.get("rulespec_path"),
                     "has_rulespec": raw.get("has_rulespec"),
                     "language": raw.get("language"),
@@ -383,6 +403,7 @@ def fetch_navigation_statuses(
     supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
     jurisdiction: str | None = None,
     doc_type: str | None = None,
+    version: str | None = None,
     page_size: int = 1_000,
 ) -> dict[str, str]:
     """Fetch existing non-empty navigation statuses keyed by path."""
@@ -399,6 +420,8 @@ def fetch_navigation_statuses(
             params["jurisdiction"] = f"eq.{jurisdiction}"
         if doc_type is not None:
             params["doc_type"] = f"eq.{doc_type}"
+        if version is not None:
+            params["version"] = f"eq.{version}"
         if last_path is not None:
             params["path"] = f"gt.{last_path}"
         query = urllib.parse.urlencode(params)

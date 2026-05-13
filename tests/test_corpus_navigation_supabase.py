@@ -90,7 +90,7 @@ def test_write_navigation_nodes_chunks_upserts_and_replaces_scope(monkeypatch):
     assert report.rows_total == 2
     assert report.rows_loaded == 2
     assert report.chunk_count == 2
-    assert report.scopes_replaced == (("us-co", "statute"),)
+    assert report.scopes_replaced == (("us-co", "statute", None),)
     assert report.rows_deleted == 1
 
 
@@ -120,7 +120,7 @@ def test_write_navigation_nodes_replace_scope_only_touches_input_scopes(monkeypa
         [_record("us-co/statute/x", jurisdiction="us-co", document_class="statute")]
     )
 
-    seen_scope_filters: list[tuple[str | None, str | None]] = []
+    seen_scope_filters: list[tuple[str | None, str | None, str | None]] = []
 
     def fake_urlopen(req, timeout):  # noqa: ARG001
         url = req.full_url
@@ -128,7 +128,8 @@ def test_write_navigation_nodes_replace_scope_only_touches_input_scopes(monkeypa
         if "/navigation_nodes?" in url and method == "GET":
             jurisdiction = "us-co" if "jurisdiction=eq.us-co" in url else None
             doc_type = "statute" if "doc_type=eq.statute" in url else None
-            seen_scope_filters.append((jurisdiction, doc_type))
+            version = None if "version=is.null" in url else "unexpected"
+            seen_scope_filters.append((jurisdiction, doc_type, version))
             return _FakeResponse(b"[]")
         return _FakeResponse()
 
@@ -142,7 +143,7 @@ def test_write_navigation_nodes_replace_scope_only_touches_input_scopes(monkeypa
 
     # Only the (us-co, statute) scope was queried for prune; the unrelated
     # (us, regulation) scope is never touched.
-    assert seen_scope_filters == [("us-co", "statute")]
+    assert seen_scope_filters == [("us-co", "statute", None)]
 
 
 def test_write_navigation_nodes_can_replace_explicit_empty_scope(monkeypatch):
@@ -173,14 +174,14 @@ def test_write_navigation_nodes_can_replace_explicit_empty_scope(monkeypatch):
         (),
         service_key="service",
         supabase_url="https://example.supabase.co",
-        replace_scopes=(("us-co", "statute"),),
+        replace_scopes=(("us-co", "statute", "2026-05-13"),),
     )
 
     assert any(method == "DELETE" for _, method in calls)
     assert report.rows_total == 0
     assert report.rows_loaded == 0
     assert report.rows_deleted == 2
-    assert report.scopes_replaced == (("us-co", "statute"),)
+    assert report.scopes_replaced == (("us-co", "statute", "2026-05-13"),)
 
 
 def test_fetch_provisions_for_navigation_resolves_parent_paths(monkeypatch):
@@ -197,6 +198,7 @@ def test_fetch_provisions_for_navigation_resolves_parent_paths(monkeypatch):
                 "ordinal": 1,
                 "heading": "Title 39",
                 "citation_path": "us-co/statute/title-39",
+                "version": "2026-05-13",
                 "rulespec_path": None,
                 "has_rulespec": False,
                 "language": "en",
@@ -212,6 +214,7 @@ def test_fetch_provisions_for_navigation_resolves_parent_paths(monkeypatch):
                 "ordinal": 1,
                 "heading": "Article 22",
                 "citation_path": "us-co/statute/title-39/article-22",
+                "version": "2026-05-13",
                 "rulespec_path": None,
                 "has_rulespec": True,
                 "language": "en",
@@ -223,7 +226,10 @@ def test_fetch_provisions_for_navigation_resolves_parent_paths(monkeypatch):
 
     pages = iter([page, b"[]"])
 
+    urls: list[str] = []
+
     def fake_urlopen(req, timeout):  # noqa: ARG001
+        urls.append(req.full_url)
         return _FakeResponse(next(pages))
 
     monkeypatch.setattr(module.urllib.request, "urlopen", fake_urlopen)
@@ -233,6 +239,7 @@ def test_fetch_provisions_for_navigation_resolves_parent_paths(monkeypatch):
         supabase_url="https://example.supabase.co",
         jurisdiction="us-co",
         doc_type="statute",
+        version="2026-05-13",
         page_size=2,
     )
     by_path = {r.citation_path: r for r in records}
@@ -241,7 +248,9 @@ def test_fetch_provisions_for_navigation_resolves_parent_paths(monkeypatch):
         by_path["us-co/statute/title-39/article-22"].parent_citation_path
         == "us-co/statute/title-39"
     )
+    assert by_path["us-co/statute/title-39"].version == "2026-05-13"
     assert by_path["us-co/statute/title-39/article-22"].has_rulespec is True
+    assert "version=eq.2026-05-13" in urls[0]
 
 
 def test_fetch_navigation_statuses_reads_non_empty_statuses(monkeypatch):
@@ -263,6 +272,7 @@ def test_fetch_navigation_statuses_reads_non_empty_statuses(monkeypatch):
         assert "select=path%2Cstatus" in req.full_url
         assert "jurisdiction=eq.us-co" in req.full_url
         assert "doc_type=eq.statute" in req.full_url
+        assert "version=eq.2026-05-13" in req.full_url
         return _FakeResponse(next(pages))
 
     monkeypatch.setattr(module.urllib.request, "urlopen", fake_urlopen)
@@ -272,6 +282,7 @@ def test_fetch_navigation_statuses_reads_non_empty_statuses(monkeypatch):
         supabase_url="https://example.supabase.co",
         jurisdiction="us-co",
         doc_type="statute",
+        version="2026-05-13",
         page_size=2,
     )
 

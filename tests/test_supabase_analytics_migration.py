@@ -22,6 +22,12 @@ RELEASE_SCOPES_MULTI_VERSION_MIGRATION = Path(
 PUBLIC_CORPUS_BOUNDARY_MIGRATION = Path(
     "supabase/migrations/20260507150000_restrict_public_corpus_base_reads.sql"
 )
+VERSION_AWARE_RELEASE_MIGRATION = Path(
+    "supabase/migrations/20260513100000_version_aware_release_provisions.sql"
+)
+VERSION_AWARE_NAVIGATION_MIGRATION = Path(
+    "supabase/migrations/20260513101000_version_aware_navigation_nodes.sql"
+)
 
 
 def test_corpus_analytics_migration_is_document_class_aware():
@@ -130,6 +136,32 @@ def test_public_references_rpc_is_current_scoped():
     assert "LEFT JOIN corpus.current_provisions tgt" in sql
     assert "JOIN corpus.current_provisions src" in sql
     assert "GRANT EXECUTE ON FUNCTION corpus.get_provision_references(text) TO anon" in sql
+
+
+def test_current_provisions_are_release_version_scoped():
+    sql = VERSION_AWARE_RELEASE_MIGRATION.read_text()
+
+    assert "ADD COLUMN IF NOT EXISTS version TEXT" in sql
+    assert "single_active_scope" in sql
+    assert "UPDATE corpus.provisions p" in sql
+    assert "idx_provisions_release_scope_version" in sql
+    assert "CREATE OR REPLACE VIEW corpus.current_provisions" in sql
+    assert "CREATE OR REPLACE VIEW corpus.legacy_provisions" in sql
+    assert "s.version = p.version" in sql
+    assert "REFRESH MATERIALIZED VIEW corpus.current_provision_counts" in sql
+
+
+def test_navigation_nodes_are_release_version_scoped():
+    sql = VERSION_AWARE_NAVIGATION_MIGRATION.read_text()
+
+    assert "ADD COLUMN IF NOT EXISTS version TEXT" in sql
+    assert "UPDATE corpus.navigation_nodes n" in sql
+    assert "DROP INDEX IF EXISTS corpus.idx_navigation_nodes_path" in sql
+    assert "idx_navigation_nodes_path_version" in sql
+    assert "CREATE OR REPLACE VIEW corpus.current_navigation_nodes" in sql
+    assert "s.version = n.version" in sql
+    assert "FROM corpus.current_navigation_nodes" in sql
+    assert "CREATE OR REPLACE FUNCTION corpus.get_navigation_node_counts()" in sql
 
 
 def test_all_corpus_rpcs_are_service_only():

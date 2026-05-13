@@ -66,23 +66,22 @@ uv run axiom-corpus-ingest sync-r2 \
   --apply
 
 # Load normalized provisions into Supabase
-# By default, auto-registers a release_scopes row with active=true so the
-# data is immediately visible in corpus.current_provisions. Pass --stage
-# to load with active=false (staged but invisible); promote later with
-# `axiom-corpus-ingest publish`.
+# By default, auto-registers exact release_scopes version rows with
+# active=true so the data is visible in corpus.current_provisions. Pass
+# --stage to load with active=false (staged but invisible); promote later
+# with `axiom-corpus-ingest publish --version <version>`.
 uv run axiom-corpus-ingest load-supabase \
-  --provisions data/corpus/provisions/<scope>/<version>.jsonl \
-  --preserve-existing-ids
+  --provisions data/corpus/provisions/<scope>/<version>.jsonl
 
 # Flip visibility for a previously loaded scope
 uv run axiom-corpus-ingest publish \
-  --jurisdiction us-ms --doc-type statute
+  --jurisdiction us-ms --doc-type statute --version <version>
 
 # Reverse (mark a scope inactive)
 uv run axiom-corpus-ingest unpublish \
-  --jurisdiction us-ms --doc-type statute
+  --jurisdiction us-ms --doc-type statute --version <version>
 
-# Find scopes that are loaded but not visible
+# Find inactive release-scope version rows
 uv run axiom-corpus-ingest list-unpublished
 
 # Check that every navigation_nodes scope has matching current_provisions
@@ -93,13 +92,17 @@ uv run axiom-corpus-ingest verify-release-coverage
 
 `corpus.current_provisions` is a view filtered by `corpus.release_scopes`.
 Rows in `corpus.provisions` are visible to the app only if a matching row
-in `corpus.release_scopes` has `active = true`.
+in `corpus.release_scopes` has the same `(jurisdiction, document_class,
+version)` and `active = true`.
+`corpus.navigation_nodes` follows the same version boundary; public reads are
+limited to active release-scope versions, and navigation rows generated for
+staged versions can coexist without replacing the current tree.
 
-As of the 2026-05-12 auto-register refactor:
+As of the 2026-05-13 version-aware auto-register refactor:
 
 - `load-supabase` auto-inserts a `release_scopes` row per loaded
-  (jurisdiction, document_class) with `active = true` by default. Forgetting
-  is no longer the failure mode that silently hides data.
+  `(jurisdiction, document_class, version)` with `active = true` by default.
+  Forgetting is no longer the failure mode that silently hides data.
 - `--stage` loads with `active = false`; promote with `publish`.
 - `--no-auto-register` skips the release_scopes write entirely (legacy
   workflow; not recommended for new loads).
