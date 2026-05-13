@@ -164,9 +164,11 @@ from axiom_corpus.corpus.supabase import (
     DEFAULT_ACCESS_TOKEN_ENV,
     DEFAULT_AXIOM_SUPABASE_URL,
     DEFAULT_SERVICE_KEY_ENV,
+    backfill_version_chunk,
     delete_supabase_provisions_scope,
     fetch_provision_counts,
     list_release_scopes,
+    list_single_active_release_scopes,
     load_provisions_to_supabase,
     resolve_service_key,
     set_release_scope_active,
@@ -482,6 +484,109 @@ def _cmd_list_unpublished(args: argparse.Namespace) -> int:
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0 if rows else 0  # Listing is informational; never fails
+
+
+def _cmd_backfill_versions(args: argparse.Namespace) -> int:
+    """Chunked backfill of corpus.provisions.version and
+    corpus.navigation_nodes.version for single-active release scopes.
+
+    The original synchronous backfill timed out via the pooler's
+    statement_timeout. This implementation calls a chunked RPC
+    repeatedly until exhausted. Idempotent and resumable: rows that
+    already have a version are not touched.
+    """
+    service_key = resolve_service_key(
+        args.supabase_url,
+        service_key_env=args.service_key_env,
+        access_token_env=args.access_token_env,
+    )
+
+    scopes_to_process: tuple[dict[str, str], ...]
+    if args.jurisdiction and args.doc_type and args.version:
+        scopes_to_process = (
+            {
+                "jurisdiction": args.jurisdiction,
+                "document_class": args.doc_type,
+                "version": args.version,
+            },
+        )
+    else:
+        scopes_to_process = list_single_active_release_scopes(
+            service_key=service_key,
+            supabase_url=args.supabase_url,
+        )
+        if args.jurisdiction:
+            scopes_to_process = tuple(
+                s for s in scopes_to_process if s["jurisdiction"] == args.jurisdiction
+            )
+        if args.doc_type:
+            scopes_to_process = tuple(
+                s for s in scopes_to_process if s["document_class"] == args.doc_type
+            )
+
+    tables = (
+        ("provisions", "navigation_nodes") if not args.table else (args.table,)
+    )
+
+    summary: list[dict[str, object]] = []
+    for scope in scopes_to_process:
+        for table in tables:
+            total_updated = 0
+            chunks = 0
+            while True:
+                if args.dry_run:
+                    print(
+                        f"DRY RUN: would backfill {table} for "
+                        f"{scope['jurisdiction']}/{scope['document_class']} "
+                        f"→ version={scope['version']}",
+                        file=sys.stderr,
+                    )
+                    break
+                updated = backfill_version_chunk(
+                    jurisdiction=scope["jurisdiction"],
+                    document_class=scope["document_class"],
+                    version=scope["version"],
+                    table_name=table,
+                    chunk_size=args.chunk_size,
+                    service_key=service_key,
+                    supabase_url=args.supabase_url,
+                    progress_stream=sys.stderr,
+                )
+                chunks += 1
+                total_updated += updated
+                if updated > 0:
+                    print(
+                        f"  {scope['jurisdiction']}/{scope['document_class']}/{table}: "
+                        f"chunk {chunks} → {updated} rows (running total {total_updated})",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                if updated < args.chunk_size:
+                    break
+            summary.append(
+                {
+                    "jurisdiction": scope["jurisdiction"],
+                    "document_class": scope["document_class"],
+                    "version": scope["version"],
+                    "table": table,
+                    "rows_updated": total_updated,
+                    "chunks": chunks,
+                    "dry_run": args.dry_run,
+                }
+            )
+
+    print(
+        json.dumps(
+            {
+                "scopes_processed": len(scopes_to_process),
+                "dry_run": args.dry_run,
+                "results": summary,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
 
 
 def _cmd_verify_release_coverage(args: argparse.Namespace) -> int:
@@ -4299,6 +4404,46 @@ def build_parser() -> argparse.ArgumentParser:
     list_unpublished_cmd.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
     list_unpublished_cmd.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
     list_unpublished_cmd.set_defaults(func=_cmd_list_unpublished)
+
+    backfill_versions_cmd = sub.add_parser(
+        "backfill-versions",
+        help=(
+            "Chunked backfill of corpus.provisions.version and "
+            "corpus.navigation_nodes.version for single-active release scopes. "
+            "Calls corpus.backfill_version_chunk RPC repeatedly until "
+            "exhausted. Idempotent and resumable."
+        ),
+    )
+    backfill_versions_cmd.add_argument("--jurisdiction")
+    backfill_versions_cmd.add_argument("--doc-type", dest="doc_type")
+    backfill_versions_cmd.add_argument(
+        "--version",
+        help=(
+            "If set together with --jurisdiction and --doc-type, "
+            "backfill that exact scope. Otherwise auto-discover single-"
+            "active scopes."
+        ),
+    )
+    backfill_versions_cmd.add_argument(
+        "--table",
+        choices=("provisions", "navigation_nodes"),
+        help="Restrict to one table. Default: both.",
+    )
+    backfill_versions_cmd.add_argument(
+        "--chunk-size", type=int, default=10000,
+        help=(
+            "Rows per RPC call. Default 10000. Larger chunks risk hitting "
+            "the pooler's statement_timeout; smaller chunks slow the run."
+        ),
+    )
+    backfill_versions_cmd.add_argument("--dry-run", action="store_true")
+    backfill_versions_cmd.add_argument(
+        "--supabase-url",
+        default=os.environ.get("AXIOM_SUPABASE_URL", DEFAULT_AXIOM_SUPABASE_URL),
+    )
+    backfill_versions_cmd.add_argument("--service-key-env", default=DEFAULT_SERVICE_KEY_ENV)
+    backfill_versions_cmd.add_argument("--access-token-env", default=DEFAULT_ACCESS_TOKEN_ENV)
+    backfill_versions_cmd.set_defaults(func=_cmd_backfill_versions)
 
     verify_release_coverage_cmd = sub.add_parser(
         "verify-release-coverage",
