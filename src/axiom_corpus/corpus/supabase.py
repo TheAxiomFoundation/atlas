@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1037,6 +1038,138 @@ def set_release_scope_active(
         "refreshed": refreshed,
         "refresh_error": refresh_error,
     }
+
+
+def list_single_active_release_scopes(
+    *,
+    service_key: str,
+    supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
+) -> tuple[dict[str, str], ...]:
+    """List (jurisdiction, document_class, version) for scopes with exactly one
+    active version. These are the scopes that can be unambiguously backfilled.
+
+    Multi-active scopes (e.g., federal guidance scopes where multiple
+    versions are simultaneously active) are excluded — their existing
+    NULL-version rows cannot be reverse-engineered to one specific
+    version without external context.
+    """
+    rest_url = _rest_url(supabase_url)
+    req = urllib.request.Request(
+        f"{rest_url}/rpc/list_single_active_release_scopes",
+        data=b"{}",
+        method="POST",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Content-Profile": "corpus",
+            "User-Agent": USER_AGENT,
+        },
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        rows = json.loads(resp.read())
+    if not isinstance(rows, list):
+        return ()
+    return tuple(
+        {
+            "jurisdiction": str(row.get("jurisdiction") or ""),
+            "document_class": str(row.get("document_class") or ""),
+            "version": str(row.get("version") or ""),
+        }
+        for row in rows
+        if isinstance(row, dict)
+    )
+
+
+def backfill_version_chunk(
+    *,
+    jurisdiction: str,
+    document_class: str,
+    version: str,
+    table_name: str,
+    chunk_size: int = 50000,
+    service_key: str,
+    supabase_url: str = DEFAULT_AXIOM_SUPABASE_URL,
+    max_retries: int = 6,
+    base_backoff_seconds: float = 1.0,
+    progress_stream: TextIO | None = None,
+) -> int:
+    """Call corpus.backfill_version_chunk RPC. Returns rows updated.
+
+    Caller is expected to loop until this returns 0. The RPC updates at
+    most ``chunk_size`` rows per call, each call within its own
+    statement_timeout window.
+
+    Transient server errors (HTTP 5xx and network timeouts) are retried
+    with exponential backoff up to ``max_retries`` times. PostgREST's
+    statement_timeout error (SQLSTATE 57014) surfaces as HTTP 500; if
+    a chunk size consistently triggers that, lower ``chunk_size``
+    rather than retrying — but a one-off transient 500 is common and
+    recoverable.
+    """
+    if table_name not in {"provisions", "navigation_nodes"}:
+        raise ValueError(f"table_name must be 'provisions' or 'navigation_nodes', got {table_name!r}")
+    rest_url = _rest_url(supabase_url)
+    payload = {
+        "p_jurisdiction": jurisdiction,
+        "p_document_class": document_class,
+        "p_version": version,
+        "p_table_name": table_name,
+        "p_chunk_size": chunk_size,
+    }
+
+    last_error: Exception | None = None
+    for attempt in range(max_retries + 1):
+        req = urllib.request.Request(
+            f"{rest_url}/rpc/backfill_version_chunk",
+            data=json.dumps(payload).encode(),
+            method="POST",
+            headers={
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}",
+                "Content-Type": "application/json",
+                "Content-Profile": "corpus",
+                "User-Agent": USER_AGENT,
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                result = json.loads(resp.read())
+            if isinstance(result, int):
+                return result
+            if isinstance(result, str):
+                return int(result)
+            raise RuntimeError(f"unexpected backfill_version_chunk response: {result!r}")
+        except urllib.error.HTTPError as exc:
+            # 4xx is a real error (bad input, permissions); don't retry.
+            if 400 <= exc.code < 500:
+                raise
+            last_error = exc
+            body = exc.read()[:300].decode("utf-8", errors="replace")
+            if progress_stream is not None:
+                print(
+                    f"    transient HTTP {exc.code} on attempt {attempt+1}/"
+                    f"{max_retries+1}: {body}",
+                    file=progress_stream,
+                    flush=True,
+                )
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = exc
+            if progress_stream is not None:
+                print(
+                    f"    transient {type(exc).__name__} on attempt {attempt+1}/"
+                    f"{max_retries+1}: {exc}",
+                    file=progress_stream,
+                    flush=True,
+                )
+
+        if attempt < max_retries:
+            sleep_for = base_backoff_seconds * (2 ** attempt)
+            time.sleep(sleep_for)
+
+    raise RuntimeError(
+        f"backfill_version_chunk failed after {max_retries+1} attempts: {last_error}"
+    )
 
 
 def list_release_scopes(

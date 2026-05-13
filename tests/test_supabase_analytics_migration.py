@@ -28,6 +28,15 @@ VERSION_AWARE_RELEASE_MIGRATION = Path(
 VERSION_AWARE_NAVIGATION_MIGRATION = Path(
     "supabase/migrations/20260513140000_restore_navigation_nodes_policy.sql"
 )
+BACKFILL_VERSION_RPC_MIGRATION = Path(
+    "supabase/migrations/20260513160000_backfill_version_rpc.sql"
+)
+BACKFILL_US_GUIDANCE_MIGRATION = Path(
+    "supabase/migrations/20260513170000_backfill_us_guidance_versions.sql"
+)
+TIGHTEN_VERSION_VIEWS_MIGRATION = Path(
+    "supabase/migrations/20260513180000_tighten_version_aware_views.sql"
+)
 
 
 def test_corpus_analytics_migration_is_document_class_aware():
@@ -175,6 +184,78 @@ def test_navigation_nodes_are_release_version_scoped():
     # RLS policy carries the NULL-fallback so anon reads work for
     # un-backfilled rows
     assert "navigation_nodes.version IS NULL" in sql
+
+
+def test_backfill_version_rpc_is_service_only():
+    sql = BACKFILL_VERSION_RPC_MIGRATION.read_text()
+
+    assert "CREATE OR REPLACE FUNCTION corpus.backfill_version_chunk" in sql
+    # Chunked update by id, scoped to NULL-version rows for the given scope
+    assert "WHERE jurisdiction = p_jurisdiction" in sql
+    assert "AND version IS NULL" in sql
+    assert "LIMIT p_chunk_size" in sql
+    # Service-role only (write operation on production data)
+    assert (
+        "GRANT EXECUTE ON FUNCTION corpus.backfill_version_chunk(TEXT, TEXT, TEXT, TEXT, INT) "
+        "TO postgres, service_role" in sql
+    )
+    assert (
+        "REVOKE EXECUTE ON FUNCTION corpus.backfill_version_chunk(TEXT, TEXT, TEXT, TEXT, INT) "
+        "FROM anon, authenticated, PUBLIC" in sql
+    )
+    # Helper enumerating single-active scopes (multi-active need manual handling)
+    assert "CREATE OR REPLACE FUNCTION corpus.list_single_active_release_scopes" in sql
+    assert "HAVING COUNT(*) = 1" in sql
+
+
+def test_backfill_us_guidance_derives_version_from_source_path():
+    """us/guidance is multi-active (4 concurrent versions). The chunked
+    RPC skips multi-active scopes, so this migration backfills the 49
+    provisions + 49 nav_nodes by parsing the version segment out of
+    source_path (which encodes ``sources/{j}/{dc}/{version}/...``)."""
+    sql = BACKFILL_US_GUIDANCE_MIGRATION.read_text()
+
+    assert "UPDATE corpus.provisions" in sql
+    assert "substring(source_path FROM '^sources/[^/]+/[^/]+/([^/]+)/')" in sql
+    assert "doc_type, ''), 'unknown') = 'guidance'" in sql
+    assert "version IS NULL" in sql
+    # nav_nodes inherit version from the linked provision (uuid cast)
+    assert "UPDATE corpus.navigation_nodes n" in sql
+    assert "FROM corpus.provisions p" in sql
+    assert "WHERE n.provision_id = p.id::text" in sql
+    assert "REFRESH MATERIALIZED VIEW corpus.current_provision_counts" in sql
+
+
+def test_tighten_version_views_drops_null_fallback():
+    """Phase 3 of the version-aware rollout: drop the NULL-fallback now
+    that every row has a version backfilled. A NULL version after this
+    migration is a bug, not a wildcard."""
+    raw = TIGHTEN_VERSION_VIEWS_MIGRATION.read_text()
+    # Strip SQL comments so the assertions inspect executable SQL only.
+    sql = "\n".join(
+        line for line in raw.splitlines() if not line.lstrip().startswith("--")
+    )
+
+    # Views recreated without the OR p.version IS NULL clause
+    assert "CREATE OR REPLACE VIEW corpus.current_provisions" in sql
+    assert "CREATE OR REPLACE VIEW corpus.legacy_provisions" in sql
+    assert "CREATE OR REPLACE VIEW corpus.current_navigation_nodes" in sql
+    assert "p.version IS NULL" not in sql
+    assert "n.version IS NULL" not in sql
+    assert "s.version = p.version" in sql
+    assert "s.version = n.version" in sql
+    # RLS policies tightened to require exact version match
+    assert "DROP POLICY IF EXISTS anon_read ON corpus.navigation_nodes" in sql
+    assert "DROP POLICY IF EXISTS authenticated_read ON corpus.navigation_nodes" in sql
+    assert "s.version = navigation_nodes.version" in sql
+    assert "navigation_nodes.version IS NULL" not in sql
+    # MV refresh uses CONCURRENTLY with statement_timeout=0 so it
+    # survives the pooler's default statement_timeout on large MVs.
+    assert "SET LOCAL statement_timeout = 0" in sql
+    assert (
+        "REFRESH MATERIALIZED VIEW CONCURRENTLY corpus.current_provision_counts"
+        in sql
+    )
 
 
 def test_all_corpus_rpcs_are_service_only():
