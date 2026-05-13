@@ -23,10 +23,10 @@ PUBLIC_CORPUS_BOUNDARY_MIGRATION = Path(
     "supabase/migrations/20260507150000_restrict_public_corpus_base_reads.sql"
 )
 VERSION_AWARE_RELEASE_MIGRATION = Path(
-    "supabase/migrations/20260513100000_version_aware_release_provisions.sql"
+    "supabase/migrations/20260513140000_restore_navigation_nodes_policy.sql"
 )
 VERSION_AWARE_NAVIGATION_MIGRATION = Path(
-    "supabase/migrations/20260513101000_version_aware_navigation_nodes.sql"
+    "supabase/migrations/20260513140000_restore_navigation_nodes_policy.sql"
 )
 
 
@@ -139,29 +139,42 @@ def test_public_references_rpc_is_current_scoped():
 
 
 def test_current_provisions_are_release_version_scoped():
+    """The 140000 migration adds the version column (idempotent) and
+    installs a version-aware corpus.current_provisions view. The view
+    uses a NULL-fallback to keep existing un-backfilled rows visible
+    during the rolling migration."""
     sql = VERSION_AWARE_RELEASE_MIGRATION.read_text()
 
+    assert "ALTER TABLE corpus.provisions" in sql
     assert "ADD COLUMN IF NOT EXISTS version TEXT" in sql
-    assert "single_active_scope" in sql
-    assert "UPDATE corpus.provisions p" in sql
-    assert "idx_provisions_release_scope_version" in sql
     assert "CREATE OR REPLACE VIEW corpus.current_provisions" in sql
     assert "CREATE OR REPLACE VIEW corpus.legacy_provisions" in sql
     assert "s.version = p.version" in sql
+    # NULL-fallback present so un-backfilled rows stay visible
+    assert "p.version IS NULL" in sql
+    assert "idx_provisions_release_scope_version" in sql
     assert "REFRESH MATERIALIZED VIEW corpus.current_provision_counts" in sql
 
 
 def test_navigation_nodes_are_release_version_scoped():
+    """The 140000 migration adds the version column on navigation_nodes,
+    installs version-aware RLS + view, and restores the path index that
+    the original failed migration had dropped."""
     sql = VERSION_AWARE_NAVIGATION_MIGRATION.read_text()
 
+    assert "ALTER TABLE corpus.navigation_nodes" in sql
     assert "ADD COLUMN IF NOT EXISTS version TEXT" in sql
-    assert "UPDATE corpus.navigation_nodes n" in sql
-    assert "DROP INDEX IF EXISTS corpus.idx_navigation_nodes_path" in sql
-    assert "idx_navigation_nodes_path_version" in sql
     assert "CREATE OR REPLACE VIEW corpus.current_navigation_nodes" in sql
     assert "s.version = n.version" in sql
-    assert "FROM corpus.current_navigation_nodes" in sql
-    assert "CREATE OR REPLACE FUNCTION corpus.get_navigation_node_counts()" in sql
+    # NULL-fallback
+    assert "n.version IS NULL" in sql
+    # Path index restored after the original migration dropped it
+    assert "CREATE INDEX IF NOT EXISTS idx_navigation_nodes_path" in sql
+    # Version-scoped index for nav queries
+    assert "idx_navigation_nodes_scope_version_parent_sort" in sql
+    # RLS policy carries the NULL-fallback so anon reads work for
+    # un-backfilled rows
+    assert "navigation_nodes.version IS NULL" in sql
 
 
 def test_all_corpus_rpcs_are_service_only():

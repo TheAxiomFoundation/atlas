@@ -1,59 +1,24 @@
--- Complete the release-scope model by carrying the source version on each
--- provision row. A current release row now exposes only provisions for its
--- exact (jurisdiction, document_class, version), not every row in that
--- jurisdiction/document class.
-
-ALTER TABLE corpus.provisions
-  ADD COLUMN IF NOT EXISTS version TEXT;
-
-COMMENT ON COLUMN corpus.provisions.version IS
-  'Source/release version label used to join provisions to corpus.release_scopes.';
-
-WITH single_active_scope AS (
-  SELECT
-    jurisdiction,
-    document_class,
-    MAX(version) AS version
-  FROM corpus.current_release_scopes
-  GROUP BY jurisdiction, document_class
-  HAVING COUNT(*) = 1
-)
-UPDATE corpus.provisions p
-SET version = s.version
-FROM single_active_scope s
-WHERE p.version IS NULL
-  AND s.jurisdiction = p.jurisdiction
-  AND s.document_class = COALESCE(NULLIF(p.doc_type, ''), 'unknown');
-
-CREATE INDEX IF NOT EXISTS idx_provisions_release_scope_version
-  ON corpus.provisions (
-    jurisdiction,
-    (COALESCE(NULLIF(doc_type, ''), 'unknown')),
-    version
-  );
-
-CREATE OR REPLACE VIEW corpus.current_provisions AS
-SELECT p.*
-FROM corpus.provisions p
-WHERE EXISTS (
-  SELECT 1
-  FROM corpus.current_release_scopes s
-  WHERE s.jurisdiction = p.jurisdiction
-    AND s.document_class = COALESCE(NULLIF(p.doc_type, ''), 'unknown')
-    AND s.version = p.version
-);
-
-CREATE OR REPLACE VIEW corpus.legacy_provisions AS
-SELECT p.*
-FROM corpus.provisions p
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM corpus.current_release_scopes s
-  WHERE s.jurisdiction = p.jurisdiction
-    AND s.document_class = COALESCE(NULLIF(p.doc_type, ''), 'unknown')
-    AND s.version = p.version
-);
-
-REFRESH MATERIALIZED VIEW corpus.current_provision_counts;
-
-NOTIFY pgrst, 'reload schema';
+-- INTENTIONALLY EMPTY — see 20260513140000_restore_navigation_nodes_policy.sql.
+--
+-- Original purpose: extend corpus.release_scopes filtering to include the
+-- provision-row version label (join on jurisdiction × document_class ×
+-- version, not just jurisdiction × document_class).
+--
+-- The original SQL of this migration UPDATEd corpus.provisions to backfill
+-- the new version column for every row in single-active-version
+-- jurisdictions. With ~5M rows that UPDATE consistently hit the pooler's
+-- statement_timeout (SQLSTATE 57014). The transaction rolled back, but
+-- intermediate state on corpus.navigation_nodes (RLS policy + dropped
+-- index) was already committed via a separate path and left the app
+-- timing out on every anon read.
+--
+-- 20260513140000 restores the working pre-version-aware state. The
+-- version-aware design needs a re-do that:
+--   1. Adds the version column in its own transaction
+--   2. Backfills in chunks (e.g., 10k rows per UPDATE) outside the
+--      pooler statement_timeout window
+--   3. Installs the version-filtered views and policies only after the
+--      backfill completes
+--
+-- Issue: filed to track the re-do.
+SELECT 1 WHERE FALSE;
